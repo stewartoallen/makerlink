@@ -1,4 +1,5 @@
 module.exports = (function MakerLinkModule() {
+
 	'use strict';
 
 	var events = require('events'),
@@ -6,23 +7,20 @@ module.exports = (function MakerLinkModule() {
 
 	var MakerLink = function() {
 		this.conn = new NetConn();
+
 		this.conn.on('payload', function(payload) {
 			var q = this.queue,
 				fn = q.splice(0,1)[0];
-			if (fn) {
-				fn(payload);
-				if (q.length > 0 && typeof(q[0]) === 'object') {
-					var cmd = q.splice(0,1)[0];
-					cmd.done(this);
-				}
-			}
+			if (fn) fn(payload);
+			this.callOnReady();
 		}.bind(this));
+
 		this.conn.on('error', function(error) {
 			// todo flush til next cmd object and call it w/ error
 			console.log({error:error});
 			this.errors.push(error);
-			throw error;
 		}.bind(this));
+
 		this.state = {
 			build:{
 				name:null,
@@ -31,13 +29,18 @@ module.exports = (function MakerLinkModule() {
 				minutes:0
 			},
 			tool:[{},{},{},{}],
+			sdcard:[],
 		};
+
 		this.queue = [];
 		this.errors = [];
+		this.onReadyQ = [];
 	};
 
 	MakerLink.prototype.reset = function(callback) {
 		this.conn.drain();
+		this.queue = [];
+		this.callOnReady();
 	};
 
 	MakerLink.prototype.open = function(host, port) {
@@ -48,19 +51,37 @@ module.exports = (function MakerLinkModule() {
 		this.conn.drain();
 	};
 
+	MakerLink.prototype.callOnReady = function() {
+		var i = 0, q = this.queue, onr = this.onReadyQ, err = this.errors, call;
+		if (q.length > 0 && err.length === 0) return;
+		while (i < onr.length) {
+			call = onr[i++];
+			if (call.error && err.length > 0) call.error(err);
+			if (call.done && q.length === 0) call.done(this);
+		}
+		this.onReadyQ = [];
+		this.errors = [];
+	};
+
 	MakerLink.prototype.onReady = function(done, error, timeout) {
-		this.queue.push({done:done, error:error, timeout:timeout});
+		this.onReadyQ.push({done:done, error:error, timeout:timeout});
+		this.callOnReady();
 		return this;
+	};
+
+	MakerLink.prototype.checkError = function(check, value, error) {
+		if (check !== value) {
+			this.errors.push(error || ('unexpected response: '+value));
+			this.reset();
+			return true;
+		}
+		return false;
 	};
 
 	MakerLink.prototype.updateBuildName = function() {
 		this.queue.push(function(payload) {
-			if (payload[0] !== CONST.RESPONSE_CODE.SUCCESS) return;
-			var name = "";
-			for (var i = 1; i < payload.byteLength; i++) {
-				if (payload[i] != 0) name = name + String.fromCharCode(payload[i]);
-			}
-			this.state.build.name = name;
+			if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+			this.state.build.name = decodeString(payload, 1);;
 		}.bind(this));
 		this.conn.write(query(CONST.HOST_QUERY.GET_BUILD_NAME));
 		return this;
@@ -68,7 +89,7 @@ module.exports = (function MakerLinkModule() {
 
 	MakerLink.prototype.updateToolheadTemperature = function(tool) {
 		this.queue.push(function(payload) {
-			if (payload[0] !== CONST.RESPONSE_CODE.SUCCESS) return;
+			if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
 			var celsius = ((payload[1] | ((payload[2] & 0xFF) << 8)));
 			this.state.tool[tool].temp = celsius;
 		}.bind(this));
@@ -80,25 +101,26 @@ module.exports = (function MakerLinkModule() {
 
 	MakerLink.prototype.updateBuildStatistics = function() {
 		this.queue.push(function(payload) {
-			if (payload[0] !== CONST.RESPONSE_CODE.SUCCESS) return;
-			var stats = {
-				state: "",
-				hours: 0,
-				minutes: 0
-			},
-			build_state_consts = CONST.BUILD_STATE;
-			for (var state in build_state_consts) {
-				if (build_state_consts.hasOwnProperty(state)) {
-					if (build_state_consts[state] === payload[1]) {
-						this.state.build.state = CONST.BUILD_STATE_DESC[state];
-						break;
-					}
-				}
-			}
+			if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+			this.state.build.state = CONST.BUILD_STATE[payload[1]];
 			this.state.build.hours = payload[2];
 			this.state.build.minutes = payload[3];
 		}.bind(this));
 		this.conn.write(query(CONST.HOST_QUERY.GET_BUILD_STATS));
+		return this;
+	};
+
+	MakerLink.prototype.updateFileList = function(more) {
+		this.queue.push(function(payload) {
+			console.log({file_response:payload[0]});
+			if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+			var file = decodeString(payload, 1);
+			console.log("update file list: "+file+" more="+more);
+			if (file && file != '') this.updateFileList(true);
+			if (!more) this.state.sdcard = [];
+			this.state.sdcard.push(file);
+		}.bind(this));
+		this.conn.write(query(CONST.HOST_QUERY.GET_NEXT_FILENAME, more ? 0 : 1));
 		return this;
 	};
 
@@ -213,20 +235,12 @@ module.exports = (function MakerLinkModule() {
 			'OVERHEAT_STATE'		: 0x8B,
 		},
 		BUILD_STATE: {
-			'NO_BUILD_INITIALIZED'		: 0x00,
-			'BUILD_RUNNING'				: 0x01,
-			'BUILD_FINISHED_NORMALLY'	: 0x02,
-			'BUILD_PAUSED'				: 0x03,
-			'BUILD_CANCELLED'			: 0x04,
-			'BUILD_SLEEPING'			: 0x05
-		},
-		BUILD_STATE_DESC: {
-			'NO_BUILD_INITIALIZED'		: "Idle",
-			'BUILD_RUNNING'				: "Build Running",
-			'BUILD_FINISHED_NORMALLY'	: "Build Complete",
-			'BUILD_PAUSED'				: "Build Paused",
-			'BUILD_CANCELLED'			: "Build Cancelled",
-			'BUILD_SLEEPING'			: "No Build Active"
+			'0' : "Idle",
+			'1' : "Running",
+			'2' : "Complete",
+			'3' : "Paused",
+			'4' : "Cancelled",
+			'5' : "None Active"
 		}
 	};
 
@@ -252,7 +266,7 @@ module.exports = (function MakerLinkModule() {
 		116, 42, 200, 150, 21, 75, 169, 247, 182, 232, 10, 84, 215, 137, 107, 53
 	];
 
-	var _exception = function ExceptionCreator(name, message) {
+	function exception(name, message) {
 		return {"name":name, "message":message};
 	}
 
@@ -264,9 +278,9 @@ module.exports = (function MakerLinkModule() {
 	*/
 	function CRC(payload) {
 		if (!payload) {
-			throw _exception("Argument Exception", 'payload is null or undefined');
+			throw exception("Argument Exception", 'payload is null or undefined');
 		} else if (!(payload instanceof ArrayBuffer)) {
-			throw _exception("Argument Exception", 'payload is not an ArrayBuffer');
+			throw exception("Argument Exception", 'payload is not an ArrayBuffer');
 		}
 		var crc = 0;
 		for(var i = 0; i < payload.byteLength; ++i) {
@@ -302,14 +316,14 @@ module.exports = (function MakerLinkModule() {
 		switch (this.state) {
 			case PACKETSTATES.WAIT_FOR_HEADER:
 				if (_byte !== CONST.PROTOCOL_STARTBYTE) {
-					throw _exception('Packet Header Exception', 'packet header value incorrect('+_byte+')');
+					throw exception('Packet Header Exception', 'packet header value incorrect('+_byte+')');
 				}
 				this.state = PACKETSTATES.WAIT_FOR_LENGTH;
 				break;
 			
 			case PACKETSTATES.WAIT_FOR_LENGTH:
 				if (_byte > CONST.MAX_PAYLOAD_LENGTH) {
-					throw _exception('Packet Length Exception', 'packet length ('+ _byte +') value greater than max.');
+					throw exception('Packet Length Exception', 'packet length ('+ _byte +') value greater than max.');
 				}
 				this.expectedLength = _byte;
 				this.state = PACKETSTATES.WAIT_FOR_DATA;
@@ -322,7 +336,7 @@ module.exports = (function MakerLinkModule() {
 				this.payload[this.payloadOffset] = _byte;
 				++this.payloadOffset;
 				if (this.payloadOffset > this.expectedLength) {
-					throw _exception('Packet Length Exception', 'packet length incorrect.');
+					throw exception('Packet Length Exception', 'packet length incorrect.');
 				} else if (this.payloadOffset === this.expectedLength) {
 					this.state = PACKETSTATES.WAIT_FOR_CRC;
 				}
@@ -330,12 +344,12 @@ module.exports = (function MakerLinkModule() {
 			case PACKETSTATES.WAIT_FOR_CRC:
 				var crc = CRC(this.payload);
 				if (crc !== _byte){
-					throw _exception('Packet CRC Exception', 'packet crc incorrect.');
+					throw exception('Packet CRC Exception', 'packet crc incorrect.');
 				}
 				this.state = PACKETSTATES.PAYLOAD_READY;
 				break;
 			default:
-				throw _exception('Parser Exception', 'default state reached.');
+				throw exception('Parser Exception', 'default state reached.');
 		}
 	};
 
@@ -354,8 +368,17 @@ module.exports = (function MakerLinkModule() {
 	 * Protocol utility functions
 	 */
 
-	function mString(string) {
+	function encodeString(string) {
 		// todo return byte array with null terminated string
+	}
+
+	function decodeString(payload, offset) {
+		var str = "";
+		for (var i = offset; i < payload.byteLength; i++) {
+			if (payload[i] === 0) break;
+			str = str + String.fromCharCode(payload[i]);
+		}
+		return str;
 	}
 
 	function query() {
@@ -380,11 +403,11 @@ module.exports = (function MakerLinkModule() {
 	*/
 	function encode(payload) {
 		if (!payload) {
-			throw _exception("Argument Exception", 'payload is null or undefined');
+			throw exception("Argument Exception", 'payload is null or undefined');
 		} else if (!(payload instanceof ArrayBuffer)) {
-			throw _exception("Argument Exception", 'payload is not an ArrayBuffer');
+			throw exception("Argument Exception", 'payload is not an ArrayBuffer');
 		} else if (payload.byteLength > CONST.MAX_PAYLOAD_LENGTH) {
-			throw _exception("Packet Length Exception", 'payload length (' + payload.byteLength + ') is greater than max ('+ CONST.MAX_PAYLOAD_LENGTH + ').');
+			throw exception("Packet Length Exception", 'payload length (' + payload.byteLength + ') is greater than max ('+ CONST.MAX_PAYLOAD_LENGTH + ').');
 		}
 
 		// Create Packet
