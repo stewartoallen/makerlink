@@ -87,6 +87,17 @@ module.exports = (function MakerLinkModule() {
 		return this;
 	}
 
+	MakerLink.prototype.updateBuildStatistics = function() {
+		this.queue.push(function(payload) {
+			if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+			this.state.build.state = CONST.BUILD_STATE[payload[1]];
+			this.state.build.hours = payload[2];
+			this.state.build.minutes = payload[3];
+		}.bind(this));
+		this.conn.write(query(CONST.HOST_QUERY.GET_BUILD_STATS));
+		return this;
+	};
+
 	MakerLink.prototype.updateToolheadTemperature = function(tool) {
 		this.queue.push(function(payload) {
 			if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
@@ -99,26 +110,16 @@ module.exports = (function MakerLinkModule() {
 		return this;
 	};
 
-	MakerLink.prototype.updateBuildStatistics = function() {
-		this.queue.push(function(payload) {
-			if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
-			this.state.build.state = CONST.BUILD_STATE[payload[1]];
-			this.state.build.hours = payload[2];
-			this.state.build.minutes = payload[3];
-		}.bind(this));
-		this.conn.write(query(CONST.HOST_QUERY.GET_BUILD_STATS));
-		return this;
-	};
-
 	MakerLink.prototype.updateFileList = function(more) {
 		this.queue.push(function(payload) {
-			console.log({file_response:payload[0]});
 			if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
-			var file = decodeString(payload, 1);
+			var file = decodeString(payload, 2);
 			console.log("update file list: "+file+" more="+more);
-			if (file && file != '') this.updateFileList(true);
 			if (!more) this.state.sdcard = [];
-			this.state.sdcard.push(file);
+			if (file && file != '') {
+				this.updateFileList(true);
+				this.state.sdcard.push(file);
+			}
 		}.bind(this));
 		this.conn.write(query(CONST.HOST_QUERY.GET_NEXT_FILENAME, more ? 0 : 1));
 		return this;
@@ -174,6 +175,7 @@ module.exports = (function MakerLinkModule() {
 			this.drain = false;
 			return;
 		}
+		console.log({read:data});
 		try {
 			for (var i = 0; i < data.length; i++) {
 				this.decoder.parseByte(data[i]);
@@ -195,8 +197,10 @@ module.exports = (function MakerLinkModule() {
 		this.drain = false;
 
 		if (this.buffer) {
+			console.log({write_buffer:data});
 			this.buffer.push(data);
 		} else {
+			console.log({write:data});
 			this.client.write(data);
 		}
 	};

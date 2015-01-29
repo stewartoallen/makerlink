@@ -4,9 +4,9 @@ function probe(host, port) {
 	var link = new MakerLink();
 	link.open(host, port);
 	link.updateBuildName()
-		.updateToolheadTemperature(0)
 		.updateBuildStatistics()
-//		.updateFileList()
+		.updateToolheadTemperature(0)
+		.updateFileList()
 		.onReady(function(ml) {
 			console.log(ml.state);
 		});
