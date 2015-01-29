@@ -6,6 +6,34 @@ module.exports = (function MakerLinkModule() {
 
 	var MakerLink = function() {
 		this.conn = new NetConn();
+		this.conn.on('payload', function(payload) {
+			var q = this.queue,
+				fn = q.splice(0,1)[0];
+			if (fn) {
+				fn(payload);
+				if (q.length > 0 && typeof(q[0]) === 'object') {
+					var cmd = q.splice(0,1)[0];
+					cmd.done(this);
+				}
+			}
+		}.bind(this));
+		this.conn.on('error', function(error) {
+			// todo flush til next cmd object and call it w/ error
+			console.log({error:error});
+			this.errors.push(error);
+			throw error;
+		}.bind(this));
+		this.state = {
+			build:{
+				name:null,
+				state:null,
+				hours:0,
+				minutes:0
+			},
+			tool:[{},{},{},{}],
+		};
+		this.queue = [];
+		this.errors = [];
 	};
 
 	MakerLink.prototype.reset = function(callback) {
@@ -20,61 +48,63 @@ module.exports = (function MakerLinkModule() {
 		this.conn.drain();
 	};
 
-	MakerLink.prototype.getBuildName = function(callback) {
-		this.conn.once('payload', function(payload) {
-			if (payload[0] === CONSTANTS.RESPONSE_CODE.SUCCESS) {
-				var name = "";
-				for (var i = 1; i < payload.byteLength; i++) {
-					if (payload[i] != 0) name = name + String.fromCharCode(payload[i]);
-				}
-				return callback({buildname:name});
-			} 
-			callback({error:"invalid buildname payload"});
-		});
-		this.conn.write(query(CONSTANTS.HOST_QUERY.GET_BUILD_NAME));
+	MakerLink.prototype.onReady = function(done, error, timeout) {
+		this.queue.push({done:done, error:error, timeout:timeout});
+		return this;
+	};
+
+	MakerLink.prototype.updateBuildName = function() {
+		this.queue.push(function(payload) {
+			if (payload[0] !== CONST.RESPONSE_CODE.SUCCESS) return;
+			var name = "";
+			for (var i = 1; i < payload.byteLength; i++) {
+				if (payload[i] != 0) name = name + String.fromCharCode(payload[i]);
+			}
+			this.state.build.name = name;
+		}.bind(this));
+		this.conn.write(query(CONST.HOST_QUERY.GET_BUILD_NAME));
+		return this;
 	}
 
-	MakerLink.prototype.getToolheadTemperature = function(tool, callback) {
-		this.conn.once('payload', function(payload) {
-			if (payload[0] === CONSTANTS.RESPONSE_CODE.SUCCESS) {
-				var celsius = ((payload[1] | ((payload[2] & 0xFF) << 8)));
-				return callback({celcius:celsius});
-			}
-			callback({error:"invalid tooltemp payload"});
-		});
+	MakerLink.prototype.updateToolheadTemperature = function(tool) {
+		this.queue.push(function(payload) {
+			if (payload[0] !== CONST.RESPONSE_CODE.SUCCESS) return;
+			var celsius = ((payload[1] | ((payload[2] & 0xFF) << 8)));
+			this.state.tool[tool].temp = celsius;
+		}.bind(this));
 		this.conn.write(
-			query(CONSTANTS.HOST_QUERY.TOOL_QUERY, tool, CONSTANTS.TOOL_QUERY.GET_TOOLHEAD_TEMP)
+			query(CONST.HOST_QUERY.TOOL_QUERY, tool, CONST.TOOL_QUERY.GET_TOOLHEAD_TEMP)
 		);
+		return this;
 	};
 
-	MakerLink.prototype.getBuildStatistics = function(callback) {
-		this.conn.once('payload', function(payload) {
-			if (payload[0] === CONSTANTS.RESPONSE_CODE.SUCCESS) {
-				var stats = {
-					state: "",
-					hours: 0,
-					minutes: 0
-				},
-				build_state_consts = CONSTANTS.BUILD_STATE;
-				for (var state in build_state_consts) {
-					if (build_state_consts.hasOwnProperty(state)) {
-						if (build_state_consts[state] === payload[1]) {
-							stats.state = CONSTANTS.BUILD_STATE_DESC[state];
-							break;
-						}
+	MakerLink.prototype.updateBuildStatistics = function() {
+		this.queue.push(function(payload) {
+			if (payload[0] !== CONST.RESPONSE_CODE.SUCCESS) return;
+			var stats = {
+				state: "",
+				hours: 0,
+				minutes: 0
+			},
+			build_state_consts = CONST.BUILD_STATE;
+			for (var state in build_state_consts) {
+				if (build_state_consts.hasOwnProperty(state)) {
+					if (build_state_consts[state] === payload[1]) {
+						this.state.build.state = CONST.BUILD_STATE_DESC[state];
+						break;
 					}
 				}
-				stats.hours = payload[2];
-				stats.minutes = payload[3];
-				return callback(stats);
 			}
-			callback({error:"invalid tooltemp payload"});
-		});
-		this.conn.write(query(CONSTANTS.HOST_QUERY.GET_BUILD_STATS));
+			this.state.build.hours = payload[2];
+			this.state.build.minutes = payload[3];
+		}.bind(this));
+		this.conn.write(query(CONST.HOST_QUERY.GET_BUILD_STATS));
+		return this;
 	};
 
-	// wrap tcp connection
-
+	/**
+	 * Wrap TCP conection
+	 */
 	function NetConn() {
 		this.decoder = null;
 		this.client = null;
@@ -123,7 +153,7 @@ module.exports = (function MakerLinkModule() {
 			return;
 		}
 		try {
-			for (var i = 0; i < data.length; ++i) {
+			for (var i = 0; i < data.length; i++) {
 				this.decoder.parseByte(data[i]);
 				if (this.decoder.isPayloadReady()) {
 					var payload = this.decoder.payload;
@@ -132,7 +162,6 @@ module.exports = (function MakerLinkModule() {
 				}
 			}
 		} catch (err) {
-			console.log({process_error:err});
 			this.decoder.reset();
 			this.emit('error', err);
 		}
@@ -150,13 +179,22 @@ module.exports = (function MakerLinkModule() {
 		}
 	};
 
-	var CONSTANTS = {
+	/**
+	 * CONST
+	 */
+
+	var CONST = {
 		PROTOCOL_STARTBYTE		: 0xD5,
 		MAX_PAYLOAD_LENGTH		: 32,
 		HOST_QUERY : {
 			'TOOL_QUERY'		: 10,
 			'GET_BUILD_NAME'	: 20,
-			'GET_BUILD_STATS'	: 24
+			'GET_BUILD_STATS'	: 24,
+			'CAPTURE_TO_FILE'	: 14,
+			'END_CAPTURE'		: 15,
+			'PLAY_CAPTURE'		: 16,
+			'RESET'				: 17,
+			'GET_NEXT_FILENAME'	: 18
 		},
 		TOOL_QUERY : {
 			'GET_TOOLHEAD_TEMP'			: 2,
@@ -195,7 +233,7 @@ module.exports = (function MakerLinkModule() {
 	/**
 	 * CRC table from http://forum.sparkfun.com/viewtopic.php?p=51145
 	 */
-	var _crctab = [
+	var CRC_TABLE = [
 		0, 94, 188, 226, 97, 63, 221, 131, 194, 156, 126, 32, 163, 253, 31, 65,
 		157, 195, 33, 127, 252, 162, 64, 30, 95, 1, 227, 189, 62, 96, 130, 220,
 		35, 125, 159, 193, 66, 28, 254, 160, 225, 191, 93, 3, 128, 222, 60, 98,
@@ -224,7 +262,7 @@ module.exports = (function MakerLinkModule() {
 	* @param {ArrayBuffer} payload
 	* @return {uint8} Returns crc value on success, throws exceptions on failure
 	*/
-	var CRC = function CRC(payload) {
+	function CRC(payload) {
 		if (!payload) {
 			throw _exception("Argument Exception", 'payload is null or undefined');
 		} else if (!(payload instanceof ArrayBuffer)) {
@@ -232,38 +270,9 @@ module.exports = (function MakerLinkModule() {
 		}
 		var crc = 0;
 		for(var i = 0; i < payload.byteLength; ++i) {
-			crc = _crctab[crc ^ payload[i]];
+			crc = CRC_TABLE[crc ^ payload[i]];
 		}
 		return crc;
-	};
-
-	/**
-	* Create protocol message from ArrayBuffer
-	*
-	* @method encode
-	* @param {ArrayBuffer} payload Single Payload of s3g Protocol Message
-	* @return {ArrayBuffer} Returns packet on success, throws exceptions on failure
-	*/
-	var encode = function Encode(payload) {
-		if (!payload) {
-			throw _exception("Argument Exception", 'payload is null or undefined');
-		} else if (!(payload instanceof ArrayBuffer)) {
-			throw _exception("Argument Exception", 'payload is not an ArrayBuffer');
-		} else if (payload.byteLength > CONSTANTS.MAX_PAYLOAD_LENGTH) {
-			throw _exception("Packet Length Exception", 'payload length (' + payload.byteLength + ') is greater than max ('+ CONSTANTS.MAX_PAYLOAD_LENGTH + ').');
-		}
-
-		// Create Packet
-		var len = payload.byteLength,
-		packet = new DataView(new ArrayBuffer(len + 3 /* Protocol Bytes */));
-		packet.setUint8(0, CONSTANTS.PROTOCOL_STARTBYTE);
-		packet.setUint8(1, len);
-
-		for(var i = 0, offset = 2; i < payload.byteLength; ++i, ++offset) {
-			packet.setUint8(offset, payload[i]);
-		}
-		packet.setUint8(len + 2, CRC(payload));
-		return packet;
 	};
 
 	var PACKETSTATES = {
@@ -273,6 +282,10 @@ module.exports = (function MakerLinkModule() {
 		WAIT_FOR_CRC: 3,
 		PAYLOAD_READY: 4
 	};
+
+	/**
+	 * Read protocol stream and create packets
+	 */
 
 	function PacketStreamDecoder() {
 		this.state = PACKETSTATES.WAIT_FOR_HEADER;
@@ -286,16 +299,16 @@ module.exports = (function MakerLinkModule() {
 	 * @param _byte Byte to add to the stream
 	 */
 	PacketStreamDecoder.prototype.parseByte = function (_byte) {
-		switch(this.state) {
+		switch (this.state) {
 			case PACKETSTATES.WAIT_FOR_HEADER:
-				if (_byte !== CONSTANTS.PROTOCOL_STARTBYTE) {
+				if (_byte !== CONST.PROTOCOL_STARTBYTE) {
 					throw _exception('Packet Header Exception', 'packet header value incorrect('+_byte+')');
 				}
 				this.state = PACKETSTATES.WAIT_FOR_LENGTH;
 				break;
 			
 			case PACKETSTATES.WAIT_FOR_LENGTH:
-				if (_byte > CONSTANTS.MAX_PAYLOAD_LENGTH) {
+				if (_byte > CONST.MAX_PAYLOAD_LENGTH) {
 					throw _exception('Packet Length Exception', 'packet length ('+ _byte +') value greater than max.');
 				}
 				this.expectedLength = _byte;
@@ -337,7 +350,15 @@ module.exports = (function MakerLinkModule() {
 		return this.state === PACKETSTATES.PAYLOAD_READY;
 	};
 
-	var query = function BuildQuery() {
+	/**
+	 * Protocol utility functions
+	 */
+
+	function mString(string) {
+		// todo return byte array with null terminated string
+	}
+
+	function query() {
 		var payload = new ArrayBuffer(arguments.length);
 		for (var i = 0; i < arguments.length; ++i) {
 			payload[i] = arguments[i];
@@ -348,6 +369,35 @@ module.exports = (function MakerLinkModule() {
 			buffer[i] = packet[i];
 		}
 		return buffer;
+	};
+
+	/**
+	* Create protocol message from ArrayBuffer
+	*
+	* @method encode
+	* @param {ArrayBuffer} payload Single Payload of s3g Protocol Message
+	* @return {ArrayBuffer} Returns packet on success, throws exceptions on failure
+	*/
+	function encode(payload) {
+		if (!payload) {
+			throw _exception("Argument Exception", 'payload is null or undefined');
+		} else if (!(payload instanceof ArrayBuffer)) {
+			throw _exception("Argument Exception", 'payload is not an ArrayBuffer');
+		} else if (payload.byteLength > CONST.MAX_PAYLOAD_LENGTH) {
+			throw _exception("Packet Length Exception", 'payload length (' + payload.byteLength + ') is greater than max ('+ CONST.MAX_PAYLOAD_LENGTH + ').');
+		}
+
+		// Create Packet
+		var len = payload.byteLength,
+		packet = new DataView(new ArrayBuffer(len + 3 /* Protocol Bytes */));
+		packet.setUint8(0, CONST.PROTOCOL_STARTBYTE);
+		packet.setUint8(1, len);
+
+		for (var i = 0, offset = 2; i < payload.byteLength; ++i, ++offset) {
+			packet.setUint8(offset, payload[i]);
+		}
+		packet.setUint8(len + 2, CRC(payload));
+		return packet;
 	};
 
 	return MakerLink;
