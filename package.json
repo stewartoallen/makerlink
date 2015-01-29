@@ -1,0 +1,21 @@
+{
+	"name": "makerlink",
+	"version": "0.0.1",
+	"description": "Implementation of S3G Protocol over TCP",
+	"main": "index.js",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1"
+	},
+	"keywords": [
+		"s3g",
+		"MakerBot"
+	],
+	"repository": {
+		"type":"git",
+		"url":"https://github.com/stewartoallen/makerlink.git"
+	},
+	"author": "Stewart Allen <stewart@neuron.com>",
+	"license": "GNU",
+	"dependencies": {
+	}
+}
