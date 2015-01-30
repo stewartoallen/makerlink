@@ -33,6 +33,7 @@ module.exports = (function MakerLinkModule() {
 			},
 			tool:[{},{},{},{}],
 			sdcard:[],
+			busy:false
 		};
 
 		this.queue = [];
@@ -51,7 +52,7 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.open = function(host, port) {
 		this.conn.open(host, port);
-		this.clearBuffer();
+		//this.clearBuffer();
 	};
 
 	MLP.close = function() {
@@ -105,8 +106,18 @@ module.exports = (function MakerLinkModule() {
 
 	/** HOST COMMANDS */
 
+	/**
+	 * docs say this has no return, but it seems to
+	 * and the bot will drop serial traffic for a few
+	 * milliseconds after this command is ACKd.
+	 */
 	MLP.clearBuffer = function() {
-		this.queueCommand(query(CONST.HOST_QUERY.CLEAR_BUFFER));
+		this.queueCommand(
+			query(CONST.HOST_QUERY.CLEAR_BUFFER),
+			function(payload) {
+				console.log({clear_payload:payload});
+			}.bind(this)
+		);
 		return this;
 	}
 
@@ -122,6 +133,18 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.jobPauseResume = function() {
 		this.queueCommand(query(CONST.HOST_QUERY.JOB_PAUSE_RESUME));
+		return this;
+	}
+
+	/** check if bot is busy with commands in queue */
+	MLP.updateBusy = function() {
+		this.queueCommand(
+			query(CONST.HOST_QUERY.CHECK_BUSY),
+			function(payload) {
+				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				this.state.busy = payload[1] === 0;
+			}.bind(this)
+		);
 		return this;
 	}
 
@@ -272,6 +295,7 @@ module.exports = (function MakerLinkModule() {
 			'JOB_ABORT'			: 7,
 			'JOB_PAUSE_RESUME'	: 8,
 			'TOOL_QUERY'		: 10,
+			'CHECK_BUSY'		: 11,
 			'GET_BUILD_NAME'	: 20,
 			'GET_BUILD_STATS'	: 24,
 			'CAPTURE_TO_FILE'	: 14,
