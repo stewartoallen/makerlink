@@ -12,8 +12,8 @@ function probe(host, port) {
 		});
 }
 
-probe('localhost', 5000);
+//probe('localhost', 5000);
 //probe('localhost', 5001);
-//probe('localhost', 5002);
+probe('localhost', 5002);
 //probe('localhost', 5003);
 //probe('localhost', 5004);

@@ -3,12 +3,15 @@ module.exports = (function MakerLinkModule() {
 	'use strict';
 
 	var events = require('events'),
-		net		= require('net');
+		net	   = require('net'),
+		maxQ   = 1,
+		ncWait = 10;
 
 	var MakerLink = function() {
 		this.conn = new NetConn();
 
 		this.conn.on('payload', function(payload) {
+			//console.log({payload:payload});
 			var q = this.queue,
 				fn = q.splice(0,1)[0];
 			if (fn) fn(payload);
@@ -33,25 +36,30 @@ module.exports = (function MakerLinkModule() {
 		};
 
 		this.queue = [];
+		this.queueOut = [];
 		this.errors = [];
 		this.onReadyQ = [];
 	};
 
-	MakerLink.prototype.reset = function(callback) {
+	var MLP = MakerLink.prototype;
+
+	MLP.resetComms = function(callback) {
 		this.conn.drain();
 		this.queue = [];
 		this.callOnReady();
 	};
 
-	MakerLink.prototype.open = function(host, port) {
+	MLP.open = function(host, port) {
 		this.conn.open(host, port);
+		this.clearBuffer();
 	};
 
-	MakerLink.prototype.close = function() {
+	MLP.close = function() {
 		this.conn.drain();
 	};
 
-	MakerLink.prototype.callOnReady = function() {
+	MLP.callOnReady = function() {
+		this.checkQueueOut();
 		var i = 0, q = this.queue, onr = this.onReadyQ, err = this.errors, call;
 		if (q.length > 0 && err.length === 0) return;
 		while (i < onr.length) {
@@ -63,65 +71,112 @@ module.exports = (function MakerLinkModule() {
 		this.errors = [];
 	};
 
-	MakerLink.prototype.onReady = function(done, error, timeout) {
+	MLP.onReady = function(done, error, timeout) {
 		this.onReadyQ.push({done:done, error:error, timeout:timeout});
 		this.callOnReady();
 		return this;
 	};
 
-	MakerLink.prototype.checkError = function(check, value, error) {
+	MLP.checkError = function(check, value, error) {
 		if (check !== value) {
 			this.errors.push(error || ('unexpected response: '+value));
-			this.reset();
+			this.resetComms();
 			return true;
 		}
 		return false;
 	};
 
-	MakerLink.prototype.updateBuildName = function() {
-		this.queue.push(function(payload) {
-			if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
-			this.state.build.name = decodeString(payload, 1);;
-		}.bind(this));
-		this.conn.write(query(CONST.HOST_QUERY.GET_BUILD_NAME));
+	MLP.queueCommand = function(packet, callback) {
+		this.queueOut.push({packet:packet, callback:callback});
+		this.checkQueueOut();
+	};
+
+	MLP.checkQueueOut = function() {
+		while (this.queueOut.length > 0 && this.queue.length < maxQ) {
+			var next = this.queueOut.splice(0,1)[0];
+			if (next.callback) {
+				this.queue.push(next.callback);
+			} else {
+				setTimeout(this.processNextCommand, ncWait);
+			}
+			this.conn.write(next.packet);
+		}
+	};
+
+	/** HOST COMMANDS */
+
+	MLP.clearBuffer = function() {
+		this.queueCommand(query(CONST.HOST_QUERY.CLEAR_BUFFER));
 		return this;
 	}
 
-	MakerLink.prototype.updateBuildStatistics = function() {
-		this.queue.push(function(payload) {
-			if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
-			this.state.build.state = CONST.BUILD_STATE[payload[1]];
-			this.state.build.hours = payload[2];
-			this.state.build.minutes = payload[3];
-		}.bind(this));
-		this.conn.write(query(CONST.HOST_QUERY.GET_BUILD_STATS));
+	MLP.resetBot = function() {
+		this.queueCommand(query(CONST.HOST_QUERY.RESET));
 		return this;
-	};
+	}
 
-	MakerLink.prototype.updateToolheadTemperature = function(tool) {
-		this.queue.push(function(payload) {
-			if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
-			var celsius = ((payload[1] | ((payload[2] & 0xFF) << 8)));
-			this.state.tool[tool].temp = celsius;
-		}.bind(this));
-		this.conn.write(
-			query(CONST.HOST_QUERY.TOOL_QUERY, tool, CONST.TOOL_QUERY.GET_TOOLHEAD_TEMP)
+	MLP.jobAbort = function() {
+		this.queueCommand(query(CONST.HOST_QUERY.JOB_ABORT));
+		return this;
+	}
+
+	MLP.jobPauseResume = function() {
+		this.queueCommand(query(CONST.HOST_QUERY.JOB_PAUSE_RESUME));
+		return this;
+	}
+
+	MLP.updateBuildName = function() {
+		this.queueCommand(
+			query(CONST.HOST_QUERY.GET_BUILD_NAME),
+			function(payload) {
+				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				this.state.build.name = decodeString(payload, 1);
+			}.bind(this)
+		);
+		return this;
+	}
+
+	MLP.updateBuildStatistics = function() {
+		this.queueCommand(
+			query(CONST.HOST_QUERY.GET_BUILD_STATS),
+			function(payload) {
+				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				this.state.build.state = CONST.BUILD_STATE[payload[1]];
+				this.state.build.hours = payload[2];
+				this.state.build.minutes = payload[3];
+			}.bind(this)
 		);
 		return this;
 	};
 
-	MakerLink.prototype.updateFileList = function(more) {
-		this.queue.push(function(payload) {
-			if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
-			var file = decodeString(payload, 2);
-			console.log("update file list: "+file+" more="+more);
-			if (!more) this.state.sdcard = [];
-			if (file && file != '') {
-				this.updateFileList(true);
-				this.state.sdcard.push(file);
-			}
-		}.bind(this));
-		this.conn.write(query(CONST.HOST_QUERY.GET_NEXT_FILENAME, more ? 0 : 1));
+	MLP.updateFileList = function(more) {
+		this.queueCommand(
+			query(CONST.HOST_QUERY.GET_NEXT_FILENAME, more ? 0 : 1),
+			function(payload) {
+				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				var sd_rc = payload[1], // what is SD response code for?
+					file = decodeString(payload, 2);
+				if (!more) this.state.sdcard = [];
+				if (file && file != '') {
+					this.updateFileList(true);
+					this.state.sdcard.push(file);
+				}
+			}.bind(this)
+		);
+		return this;
+	};
+
+	/** TOOL COMMANDS */
+
+	MLP.updateToolheadTemperature = function(tool) {
+		this.queueCommand(
+			query(CONST.HOST_QUERY.TOOL_QUERY, tool, CONST.TOOL_QUERY.GET_TOOLHEAD_TEMP),
+			function(payload) {
+				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				var celsius = ((payload[1] | ((payload[2] & 0xFF) << 8)));
+				this.state.tool[tool].temp = celsius;
+			}.bind(this)
+		);
 		return this;
 	};
 
@@ -213,6 +268,9 @@ module.exports = (function MakerLinkModule() {
 		PROTOCOL_STARTBYTE		: 0xD5,
 		MAX_PAYLOAD_LENGTH		: 32,
 		HOST_QUERY : {
+			'CLEAR_BUFFER'		: 3,
+			'JOB_ABORT'			: 7,
+			'JOB_PAUSE_RESUME'	: 8,
 			'TOOL_QUERY'		: 10,
 			'GET_BUILD_NAME'	: 20,
 			'GET_BUILD_STATS'	: 24,
