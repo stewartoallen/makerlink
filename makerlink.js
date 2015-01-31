@@ -299,11 +299,23 @@ module.exports = (function MakerLinkModule() {
 		);
 	};
 
+	MLP.findAxesMinimums = function(axes_bits, rate, timeout) {
+		return this.queueCommand(
+			query2(pack('BBLI', HOST_QUERY.FIND_AXES_MIN, axes_bits, rate, timeout))
+		);
+	};
+
+	MLP.findAxesMaximums = function(filename) {
+		return this.queueCommand(
+			query2(pack('BBLI', HOST_QUERY.FIND_AXES_MAX, axes_bits, rate, timeout))
+		);
+	};
+
 	/** TOOL COMMANDS */
 
 	MLP.setToolheadTemperature = function(tool, temp) {
 		return this.queueCommand(
-			query2(pack('BBBi', HOST_QUERY.TOOL_QUERY, tool, TOOL_QUERY.SET_TOOLHEAD_TEMP, temp))
+			toolAction(tool, TOOL_COMMAND.SET_TOOLHEAD_TEMP, pack('i',  temp))
 		);
 	};
 
@@ -496,6 +508,30 @@ module.exports = (function MakerLinkModule() {
 		return buf;
 	}
 
+	function toolAction(tool, command, packed_args) {
+		return query2(
+			concatArrayBuffers(
+				pack('BBBB', HOST_COMMAND.TOOL_ACTION, tool, command, packed_args.byteLength),
+				packed_args
+			)
+		);
+	}
+
+	function concatArrayBuffers(a1, a2) {
+		var l1 = a1.byteLength,
+			l2 = a2.byteLength,
+			len = l1 + l2,
+			i = 0,
+			j = 0,
+			nab = new ArrayBuffer(len),
+			dv1 = new DataView(a1),
+			dv2 = new DataView(a2),
+			dv3 = new DataView(nab);
+		while (i < l1) dv3.setUint8(i, dv1.getUint8(i++));
+		while (j < l2) dv3.setUint8(i + j, dv2.getUint8(j++));
+		return nab;
+	}
+
 	function pack(def) {
 		var i = 1,
 			j = 0,
@@ -583,8 +619,8 @@ module.exports = (function MakerLinkModule() {
 	function encode(payload) {
 		if (!payload) {
 			throw exception("Argument Exception", 'payload is null or undefined');
-		} else if (!(payload instanceof ArrayBuffer)) {
-			throw exception("Argument Exception", 'payload is not an ArrayBuffer');
+//		} else if (!(payload instanceof ArrayBuffer)) {
+//			throw exception("Argument Exception", 'payload is not an ArrayBuffer');
 		} else if (payload.byteLength > MAX_PAYLOAD_LENGTH) {
 			throw exception("Packet Length Exception", 'payload length (' + payload.byteLength + ') is greater than max ('+ MAX_PAYLOAD_LENGTH + ').');
 		}
@@ -615,8 +651,8 @@ module.exports = (function MakerLinkModule() {
 	function CRC(payload) {
 		if (!payload) {
 			throw exception("Argument Exception", 'payload is null or undefined');
-		} else if (!(payload instanceof ArrayBuffer)) {
-			throw exception("Argument Exception", 'payload is not an ArrayBuffer');
+//		} else if (!(payload instanceof ArrayBuffer)) {
+//			throw exception("Argument Exception", 'payload is not an ArrayBuffer');
 		}
 		var i = 0,
 			crc = 0,
@@ -651,6 +687,12 @@ module.exports = (function MakerLinkModule() {
 			'GET_VERSION_EXT'          : 27
 		},
 		HOST_COMMAND = {
+			'FIND_AXES_MIN'            : 131,
+			'FIND_AXES_MAX'            : 132,
+			'DELAY'                    : 133,
+			'CHANGE_TOOL'              : 134,
+			'WAIT_TOOL_READY'          : 135,
+			'TOOL_ACTION'              : 136,
 			'SET_BUILD_PERCENT'        : 150
 		},
 		TOOL_QUERY = {
