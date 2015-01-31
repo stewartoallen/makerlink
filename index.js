@@ -4,7 +4,9 @@ function probe(host, port) {
 	var link = new MakerLink();
 	link.open(host, port);
 	link
-//		updateBufferFree()
+//		.bootInit()
+//		.clearBuffer() // causes bot to be unresponsive for a few millis or ignore next command
+		.updateBufferFree()
 		.updateBuildName()
 		.updateBuildStatistics()
 		.updateToolheadTemperature(0)
@@ -15,6 +17,7 @@ function probe(host, port) {
 		.updateBusy()
 		.updateBufferFree()
 		.updateBoardState()
+		.updateVersionExt()
 		.onReady(function(ml) {
 			console.log(ml.state);
 		});
