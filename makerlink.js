@@ -69,6 +69,7 @@ module.exports = (function MakerLinkModule() {
 	MLP.open = function(host, port) {
 		this.conn.open(host, port);
 		//this.clearBuffer();
+		return this;
 	};
 
 	MLP.close = function() {
@@ -147,6 +148,10 @@ module.exports = (function MakerLinkModule() {
 		return this.queueCommand( query(HOST_QUERY.RESET) );
 	}
 
+	/**
+	 * also clears buffers, so like clearBuffer(), bot
+	 * becomes temporarily unresponsive
+	 */
 	MLP.jobAbort = function() {
 		return this.queueCommand( query(HOST_QUERY.JOB_ABORT) );
 	}
@@ -239,7 +244,7 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.playbackFile = function(filename) {
 		if (!filename) throw "missing filename";
-		if (filename.length > 12) throw "filename too long";
+//		if (filename.length > 12) throw "filename too long";
 		return this.queueCommand(
 			query2(pack('BS', HOST_QUERY.PLAY_CAPTURE, filename)),
 			function (payload) {
@@ -613,15 +618,15 @@ module.exports = (function MakerLinkModule() {
 		} else if (!(payload instanceof ArrayBuffer)) {
 			throw exception("Argument Exception", 'payload is not an ArrayBuffer');
 		}
-		var crc = 0;
-		for(var i = 0; i < payload.byteLength; ++i) {
-			crc = CRC_TABLE[crc ^ payload[i]];
-		}
+		var i = 0,
+			crc = 0,
+			len = payload.byteLength;
+		while (i < len) crc = CRC_TABLE[crc ^ payload[i++]];
 		return crc;
 	}
 
 	/**
-	 * CONST
+	 * CONSTANTS
 	 */
 
 	var PROTOCOL_STARTBYTE = 0xD5,

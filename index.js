@@ -9,7 +9,7 @@ function probe(host, port) {
 		.requestBufferFree()
 		.requestBuildName()
 		.requestBuildStatistics()
-		.setToolheadTemperature(0,30)
+//		.setToolheadTemperature(0,30)
 		.requestToolheadTemperature(0)
 		.requestToolheadTargetTemperature(0)
 //		.captureToFile('capture.x3g')
@@ -19,13 +19,28 @@ function probe(host, port) {
 		.requestBufferFree()
 		.requestBoardState()
 		.requestVersionExt()
+//		.jobAbort()
 		.onReady(function(ml) {
 			console.log(ml.state);
 		});
 }
 
-probe('localhost', 5000);
+function print(host, port, file) {
+	var link = new MakerLink();
+	link
+		.open(host, port)
+		.requestBufferFree()
+		.requestToolheadTemperature(0)
+		.playbackFile(file)
+		.onReady(function(ml) {
+			console.log(ml.state);
+		});
+}
+
+//probe('localhost', 5000);
 //probe('localhost', 5001);
-//probe('localhost', 5002);
-//probe('localhost', 5003);
-//probe('localhost', 5004);
+//probe('localhost', 5002); 
+//probe('localhost', 5003); 
+probe('localhost', 5004);
+
+//print('localhost', 5004, 'mik torus.x3g');
