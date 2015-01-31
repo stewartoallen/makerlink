@@ -10,7 +10,7 @@ module.exports = (function MakerLinkModule() {
 	var MakerLink = function() {
 		this.conn = new NetConn();
 
-		this.conn.on('payload', function(payload) {
+		this.conn.on('payload', function (payload) {
 			//console.log({payload:payload});
 			var q = this.queue,
 				fn = q.splice(0,1)[0];
@@ -25,15 +25,18 @@ module.exports = (function MakerLinkModule() {
 		}.bind(this));
 
 		this.state = {
-			build:{
+			build:{ //current build state
 				name:null,
 				state:null,
 				hours:0,
 				minutes:0
 			},
-			tool:[{},{},{},{}],
-			sdcard:[],
-			buffer:0,
+			board:[], // motherboard status flags
+			tool:[{},{},{},{}], // tool status
+			playback:0, // status of playback command
+			capture:{}, // state of playback capture
+			sdcard:[], // contents of SD card
+			buffer:0, // available command buffer
 			busy:false
 		};
 
@@ -121,7 +124,7 @@ module.exports = (function MakerLinkModule() {
 	MLP.clearBuffer = function() {
 		this.queueCommand(
 			query(CONST.HOST_QUERY.CLEAR_BUFFER),
-			function(payload) {
+			function (payload) {
 				console.log({clear_payload:payload});
 			}.bind(this)
 		);
@@ -131,7 +134,7 @@ module.exports = (function MakerLinkModule() {
 	MLP.updateBufferFree = function() {
 		this.queueCommand(
 			query(CONST.HOST_QUERY.GET_BUFFER_FREE),
-			function(payload) {
+			function (payload) {
 				var out = unpack('BL', payload);
 				if (this.checkError(out[0],CONST.RESPONSE_CODE.SUCCESS)) return;
 				this.state.buffer = out[1];
@@ -155,11 +158,16 @@ module.exports = (function MakerLinkModule() {
 		return this;
 	}
 
+	MLP.jobSetPercent = function(percent) {
+		this.queueCommand(encode(pack('BB', CONST.HOST_QUERY.JOB_PAUSE_RESUME, percent)));
+		return this;
+	}
+
 	/** check if bot is busy with commands in queue */
 	MLP.updateBusy = function() {
 		this.queueCommand(
 			query(CONST.HOST_QUERY.CHECK_BUSY),
-			function(payload) {
+			function (payload) {
 				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
 				this.state.busy = payload[1] === 0;
 			}.bind(this)
@@ -170,7 +178,7 @@ module.exports = (function MakerLinkModule() {
 	MLP.updateBuildName = function() {
 		this.queueCommand(
 			query(CONST.HOST_QUERY.GET_BUILD_NAME),
-			function(payload) {
+			function (payload) {
 				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
 				this.state.build.name = decodeString(payload, 1);
 			}.bind(this)
@@ -178,10 +186,30 @@ module.exports = (function MakerLinkModule() {
 		return this;
 	}
 
+	MLP.updateBoardState = function() {
+		this.queueCommand(
+			query(CONST.HOST_QUERY.GET_BOARD_STATE),
+			function (payload) {
+				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				var bits = payload[1], state = [];
+				if (bits & 1) state.push('PREHEAT');
+				if (bits & 2) state.push('MANUAL');
+				if (bits & 4) state.push('SCRIPT');
+				if (bits & 8) state.push('PROCESS');
+				if (bits & 16) state.push('BUTTON WAIT');
+				if (bits & 32) state.push('CANCELLING');
+				if (bits & 64) state.push('HEAT SHUTDOWN');
+				if (bits & 128) state.push('POWER ERROR');
+				this.state.board = state;
+			}.bind(this)
+		);
+		return this;
+	};
+
 	MLP.updateBuildStatistics = function() {
 		this.queueCommand(
 			query(CONST.HOST_QUERY.GET_BUILD_STATS),
-			function(payload) {
+			function (payload) {
 				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
 				this.state.build.state = CONST.BUILD_STATE[payload[1]];
 				this.state.build.hours = payload[2];
@@ -191,10 +219,47 @@ module.exports = (function MakerLinkModule() {
 		return this;
 	};
 
+	MLP.captureToFile = function(filename) {
+		if (!filename) throw "missing filename";
+		if (filename.length > 12) throw "filename too long";
+		this.queueCommand(
+			encode(pack('BS', CONST.HOST_QUERY.CAPTURE_TO_FILE, filename)),
+			function (payload) {
+				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				this.state.capture = { begin:payload[1] };
+			}.bind(this)
+		);
+		return this;
+	};
+
+	MLP.endCapture = function(filename) {
+		this.queueCommand(
+			encode(pack('B', CONST.HOST_QUERY.END_CAPTURE)),
+			function (payload) {
+				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				this.state.capture.end = payload[1];
+			}.bind(this)
+		);
+		return this;
+	};
+
+	MLP.playbackFile = function(filename) {
+		if (!filename) throw "missing filename";
+		if (filename.length > 12) throw "filename too long";
+		this.queueCommand(
+			encode(pack('BS', CONST.HOST_QUERY.PLAY_CAPTURE, filename)),
+			function (payload) {
+				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				this.state.playback = payload[1];
+			}.bind(this)
+		);
+		return this;
+	};
+
 	MLP.updateFileList = function(more) {
 		this.queueCommand(
 			query(CONST.HOST_QUERY.GET_NEXT_FILENAME, more ? 0 : 1),
-			function(payload) {
+			function (payload) {
 				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
 				var sd_rc = payload[1], // what is SD response code for? always zero?
 					file = decodeString(payload, 2);
@@ -213,10 +278,22 @@ module.exports = (function MakerLinkModule() {
 	MLP.updateToolheadTemperature = function(tool) {
 		this.queueCommand(
 			query(CONST.HOST_QUERY.TOOL_QUERY, tool, CONST.TOOL_QUERY.GET_TOOLHEAD_TEMP),
-			function(payload) {
-				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
-				var celsius = ((payload[1] | ((payload[2] & 0xFF) << 8)));
-				this.state.tool[tool].temp = celsius;
+			function (payload) {
+				var out = unpack('Bi', payload);
+				if (this.checkError(out[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				this.state.tool[tool].temp = out[1];
+			}.bind(this)
+		);
+		return this;
+	};
+
+	MLP.updateToolheadTargetTemperature = function(tool) {
+		this.queueCommand(
+			query(CONST.HOST_QUERY.TOOL_QUERY, tool, CONST.TOOL_QUERY.GET_TOOLHEAD_TARGET_TEMP),
+			function (payload) {
+				var out = unpack('Bi', payload);
+				if (this.checkError(out[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				this.state.tool[tool].temp_target = out[1];
 			}.bind(this)
 		);
 		return this;
@@ -317,12 +394,14 @@ module.exports = (function MakerLinkModule() {
 			'TOOL_QUERY'		: 10,
 			'CHECK_BUSY'		: 11,
 			'GET_BUILD_NAME'	: 20,
+			'GET_BOARD_STATE'	: 23,
 			'GET_BUILD_STATS'	: 24,
 			'CAPTURE_TO_FILE'	: 14,
 			'END_CAPTURE'		: 15,
 			'PLAY_CAPTURE'		: 16,
 			'RESET'				: 17,
-			'GET_NEXT_FILENAME'	: 18
+			'GET_NEXT_FILENAME'	: 18,
+			'SET_BUILD_PERCENT'	: 150
 		},
 		TOOL_QUERY : {
 			'GET_TOOLHEAD_TEMP'			: 2,
@@ -531,19 +610,19 @@ module.exports = (function MakerLinkModule() {
 					view.setUint8(off++, param);
 					break;
 				case 'i':
-					view.setInt16(off, param);
+					view.setInt16(off, param, true);
 					off += 2;
 					break;
 				case 'I':
-					view.setUint16(off, param);
+					view.setUint16(off, param, true);
 					off += 2;
 					break;
 				case 'l':
-					view.setInt32(off, param);
+					view.setInt32(off, param, true);
 					off += 4;
 					break;
 				case 'L':
-					view.setUint32(off, param);
+					view.setUint32(off, param, true);
 					off += 4;
 					break;
 				case 'S':
@@ -571,19 +650,19 @@ module.exports = (function MakerLinkModule() {
 					out.push(view.getUint8(off++));
 					break;
 				case 'i':
-					out.push(view.getInt16(off));
+					out.push(view.getInt16(off, true));
 					off += 2;
 					break;
 				case 'I':
-					out.push(view.getUint16(off));
+					out.push(view.getUint16(off, true));
 					off += 2;
 					break;
 				case 'l':
-					out.push(view.getInt32(off));
+					out.push(view.getInt32(off, true));
 					off += 4;
 					break;
 				case 'L':
-					out.push(view.getUint32(off));
+					out.push(view.getUint32(off, true));
 					off += 4;
 					break;
 				case 'S':

@@ -8,9 +8,13 @@ function probe(host, port) {
 		.updateBuildName()
 		.updateBuildStatistics()
 		.updateToolheadTemperature(0)
+		.updateToolheadTargetTemperature(0)
+//		.captureToFile('capture.x3g')
+//		.endCapture()
 		.updateFileList()
 		.updateBusy()
 		.updateBufferFree()
+		.updateBoardState()
 		.onReady(function(ml) {
 			console.log(ml.state);
 		});
