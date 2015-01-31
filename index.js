@@ -3,11 +3,14 @@ var MakerLink = require('./makerlink');
 function probe(host, port) {
 	var link = new MakerLink();
 	link.open(host, port);
-	link.updateBuildName()
+	link
+//		updateBufferFree()
+		.updateBuildName()
 		.updateBuildStatistics()
 		.updateToolheadTemperature(0)
 		.updateFileList()
 		.updateBusy()
+		.updateBufferFree()
 		.onReady(function(ml) {
 			console.log(ml.state);
 		});

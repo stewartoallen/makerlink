@@ -33,6 +33,7 @@ module.exports = (function MakerLinkModule() {
 			},
 			tool:[{},{},{},{}],
 			sdcard:[],
+			buffer:0,
 			busy:false
 		};
 
@@ -43,6 +44,12 @@ module.exports = (function MakerLinkModule() {
 	};
 
 	var MLP = MakerLink.prototype;
+
+	MLP.test = function() {
+		var p = pack('BiIlLS', 1, 2, 3, 4, 5, "Stewart");
+		var u = unpack('BiIlLS', p);
+		console.log({p:p, u:u});
+	};
 
 	MLP.resetComms = function(callback) {
 		this.conn.drain();
@@ -121,6 +128,18 @@ module.exports = (function MakerLinkModule() {
 		return this;
 	}
 
+	MLP.updateBufferFree = function() {
+		this.queueCommand(
+			query(CONST.HOST_QUERY.GET_BUFFER_FREE),
+			function(payload) {
+				var out = unpack('BL', payload);
+				if (this.checkError(out[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				this.state.buffer = out[1];
+			}.bind(this)
+		);
+		return this;
+	}
+
 	MLP.resetBot = function() {
 		this.queueCommand(query(CONST.HOST_QUERY.RESET));
 		return this;
@@ -177,7 +196,7 @@ module.exports = (function MakerLinkModule() {
 			query(CONST.HOST_QUERY.GET_NEXT_FILENAME, more ? 0 : 1),
 			function(payload) {
 				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
-				var sd_rc = payload[1], // what is SD response code for?
+				var sd_rc = payload[1], // what is SD response code for? always zero?
 					file = decodeString(payload, 2);
 				if (!more) this.state.sdcard = [];
 				if (file && file != '') {
@@ -291,6 +310,7 @@ module.exports = (function MakerLinkModule() {
 		PROTOCOL_STARTBYTE		: 0xD5,
 		MAX_PAYLOAD_LENGTH		: 32,
 		HOST_QUERY : {
+			'GET_BUFFER_FREE'	: 2,
 			'CLEAR_BUFFER'		: 3,
 			'JOB_ABORT'			: 7,
 			'JOB_PAUSE_RESUME'	: 8,
@@ -374,6 +394,22 @@ module.exports = (function MakerLinkModule() {
 		}
 		return crc;
 	};
+
+	/*
+	function packCRC(buf) {
+		if (!buf) {
+			throw exception("Argument Exception", 'payload is null or undefined');
+		} else if (!(buf instanceof ArrayBuffer)) {
+			throw exception("Argument Exception", 'payload is not an ArrayBuffer');
+		}
+		var crc = 0, i = 0;
+		while (i < buf.byteLength - 1) {
+			crc = CRC_TABLE[crc ^ buf[i++]];
+		}
+		buf[i] = crc;
+		return buf;
+	};
+	*/
 
 	var PACKETSTATES = {
 		WAIT_FOR_HEADER: 0,
@@ -480,6 +516,90 @@ module.exports = (function MakerLinkModule() {
 		return buffer;
 	};
 
+	function pack(def) {
+		var i = 1,
+			j = 0,
+			off = 0,
+			arg = arguments,
+			len = arg.length,
+			out = new ArrayBuffer(256),
+			view = new DataView(out);
+		while (i < len) {
+			var param = arg[i++];
+			switch (def[j++]) {
+				case 'B':
+					view.setUint8(off++, param);
+					break;
+				case 'i':
+					view.setInt16(off, param);
+					off += 2;
+					break;
+				case 'I':
+					view.setUint16(off, param);
+					off += 2;
+					break;
+				case 'l':
+					view.setInt32(off, param);
+					off += 4;
+					break;
+				case 'L':
+					view.setUint32(off, param);
+					off += 4;
+					break;
+				case 'S':
+					for (var x=0; x<param.length; x++) {
+						view.setUint8(off++, param.charCodeAt(x));
+					}
+					view.setUint8(off++, 0);
+					break;
+				default:
+					throw "illegal def: "+def;
+			}
+		}
+		return out.slice(0,off);
+	}
+
+	function unpack(def,buf) {
+		var j = 0,
+			off = 0,
+			out = [],
+			len = buf.byteLength,
+			view = new DataView(buf);
+		while (j < def.length && off < len) {
+			switch (def[j++]) {
+				case 'B':
+					out.push(view.getUint8(off++));
+					break;
+				case 'i':
+					out.push(view.getInt16(off));
+					off += 2;
+					break;
+				case 'I':
+					out.push(view.getUint16(off));
+					off += 2;
+					break;
+				case 'l':
+					out.push(view.getInt32(off));
+					off += 4;
+					break;
+				case 'L':
+					out.push(view.getUint32(off));
+					off += 4;
+					break;
+				case 'S':
+					var ch, str = [];
+					while ((ch = view.getUint8(off++)) !== 0 && off < len) {
+						str.push(String.fromCharCode(ch));
+					}
+					out.push(str.join(''));
+					break;
+				default:
+					throw "illegal def: "+def;
+			}
+		}
+		return out;
+	}
+
 	/**
 	* Create protocol message from ArrayBuffer
 	*
@@ -505,6 +625,7 @@ module.exports = (function MakerLinkModule() {
 		for (var i = 0, offset = 2; i < payload.byteLength; ++i, ++offset) {
 			packet.setUint8(offset, payload[i]);
 		}
+
 		packet.setUint8(len + 2, CRC(payload));
 		return packet;
 	};
