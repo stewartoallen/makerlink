@@ -120,7 +120,7 @@ module.exports = (function MakerLinkModule() {
 	/** HOST COMMANDS */
 
 	MLP.bootInit = function() {
-		return this.queueCommand( query(CONST.HOST_QUERY.BOOT_INIT) );
+		return this.queueCommand( query(HOST_QUERY.BOOT_INIT) );
 	}
 
 	/**
@@ -129,63 +129,63 @@ module.exports = (function MakerLinkModule() {
 	 * milliseconds after this command is ACKd.
 	 */
 	MLP.clearBuffer = function() {
-		return this.queueCommand( query(CONST.HOST_QUERY.CLEAR_BUFFER) );
+		return this.queueCommand( query(HOST_QUERY.CLEAR_BUFFER) );
 	}
 
-	MLP.updateBufferFree = function() {
+	MLP.requestBufferFree = function() {
 		return this.queueCommand(
-			query(CONST.HOST_QUERY.GET_BUFFER_FREE),
+			query(HOST_QUERY.GET_BUFFER_FREE),
 			function (payload) {
 				var out = unpack('BL', payload);
-				if (this.checkError(out[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.buffer = out[1];
 			}.bind(this)
 		);
 	}
 
 	MLP.resetBot = function() {
-		return this.queueCommand( query(CONST.HOST_QUERY.RESET) );
+		return this.queueCommand( query(HOST_QUERY.RESET) );
 	}
 
 	MLP.jobAbort = function() {
-		return this.queueCommand( query(CONST.HOST_QUERY.JOB_ABORT) );
+		return this.queueCommand( query(HOST_QUERY.JOB_ABORT) );
 	}
 
 	MLP.jobPauseResume = function() {
-		return this.queueCommand( query(CONST.HOST_QUERY.JOB_PAUSE_RESUME) );
+		return this.queueCommand( query(HOST_QUERY.JOB_PAUSE_RESUME) );
 	}
 
 	MLP.jobSetPercent = function(percent) {
-		return this.queueCommand( query2(pack('BB', CONST.HOST_QUERY.JOB_PAUSE_RESUME, percent)) );
+		return this.queueCommand( query2(pack('BB', HOST_QUERY.JOB_PAUSE_RESUME, percent)) );
 	}
 
 	/** check if bot is busy with commands in queue */
-	MLP.updateBusy = function() {
+	MLP.requestBusyState = function() {
 		return this.queueCommand(
-			query(CONST.HOST_QUERY.CHECK_BUSY),
+			query(HOST_QUERY.CHECK_BUSY),
 			function (payload) {
-				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				if (this.checkError(payload[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.busy = payload[1] === 0;
 			}.bind(this)
 		);
 	}
 
-	MLP.updateBuildName = function() {
+	MLP.requestBuildName = function() {
 		return this.queueCommand(
-			query(CONST.HOST_QUERY.GET_BUILD_NAME),
+			query(HOST_QUERY.GET_BUILD_NAME),
 			function (payload) {
 				var out = unpack('BS', payload);
-				if (this.checkError(out[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.build.name = out[1];
 			}.bind(this)
 		);
 	}
 
-	MLP.updateBoardState = function() {
+	MLP.requestBoardState = function() {
 		return this.queueCommand(
-			query(CONST.HOST_QUERY.GET_BOARD_STATE),
+			query(HOST_QUERY.GET_BOARD_STATE),
 			function (payload) {
-				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				if (this.checkError(payload[0],RESPONSE_CODE.SUCCESS)) return;
 				var bits = payload[1], info = [];
 				if (bits & 1) info.push('PREHEAT');
 				if (bits & 2) info.push('MANUAL');
@@ -201,13 +201,13 @@ module.exports = (function MakerLinkModule() {
 		);
 	};
 
-	MLP.updateBuildStatistics = function() {
+	MLP.requestBuildStatistics = function() {
 		return this.queueCommand(
-			query(CONST.HOST_QUERY.GET_BUILD_STATS),
+			query(HOST_QUERY.GET_BUILD_STATS),
 			function (payload) {
-				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				if (this.checkError(payload[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.build.flag = payload[1];
-				this.state.build.state = CONST.BUILD_STATE[payload[1]];
+				this.state.build.state = BUILD_STATE[payload[1]];
 				this.state.build.hours = payload[2];
 				this.state.build.minutes = payload[3];
 			}.bind(this)
@@ -218,9 +218,9 @@ module.exports = (function MakerLinkModule() {
 		if (!filename) throw "missing filename";
 		if (filename.length > 12) throw "filename too long";
 		return this.queueCommand(
-			query2(pack('BS', CONST.HOST_QUERY.CAPTURE_TO_FILE, filename)),
+			query2(pack('BS', HOST_QUERY.CAPTURE_TO_FILE, filename)),
 			function (payload) {
-				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				if (this.checkError(payload[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.capture = { begin:payload[1] };
 			}.bind(this)
 		);
@@ -228,10 +228,10 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.endCapture = function(filename) {
 		return this.queueCommand(
-			query2(pack('B', CONST.HOST_QUERY.END_CAPTURE)),
+			query2(pack('B', HOST_QUERY.END_CAPTURE)),
 			function (payload) {
 				var out = unpack('BL', payload);
-				if (this.checkError(out[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.capture.end = out[1];
 			}.bind(this)
 		);
@@ -241,48 +241,48 @@ module.exports = (function MakerLinkModule() {
 		if (!filename) throw "missing filename";
 		if (filename.length > 12) throw "filename too long";
 		return this.queueCommand(
-			query2(pack('BS', CONST.HOST_QUERY.PLAY_CAPTURE, filename)),
+			query2(pack('BS', HOST_QUERY.PLAY_CAPTURE, filename)),
 			function (payload) {
-				if (this.checkError(payload[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				if (this.checkError(payload[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.playback = payload[1];
 			}.bind(this)
 		);
 	};
 
-	MLP.updateFileList = function(more) {
+	MLP.requestFileList = function(more) {
 		return this.queueCommand(
-			query(CONST.HOST_QUERY.GET_NEXT_FILENAME, more ? 0 : 1),
+			query(HOST_QUERY.GET_NEXT_FILENAME, more ? 0 : 1),
 			function (payload) {
 				var out = unpack('BBS', payload),
 					sd_rc = out[1], // what is SD response code for? always zero?
 					file = out[2];
-				if (this.checkError(out[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
 				if (!more) this.state.sdcard = [];
 				if (file && file != '') {
-					this.updateFileList(true);
+					this.requestFileList(true);
 					this.state.sdcard.push(file);
 				}
 			}.bind(this)
 		);
 	};
 
-	MLP.updateVersion = function(filename) {
+	MLP.requestVersion = function(filename) {
 		return this.queueCommand(
-			query2(pack('BI', CONST.HOST_QUERY.GET_VERSION, 100)),
+			query2(pack('BI', HOST_QUERY.GET_VERSION, 100)),
 			function (payload) {
 				var out = unpack('BI', payload);
-				if (this.checkError(out[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.version = { firmware: out[1] };
 			}.bind(this)
 		);
 	};
 
-	MLP.updateVersionExt = function(filename) {
+	MLP.requestVersionExt = function(filename) {
 		return this.queueCommand(
-			query2(pack('BI', CONST.HOST_QUERY.GET_VERSION_EXT, 100)),
+			query2(pack('BI', HOST_QUERY.GET_VERSION_EXT, 100)),
 			function (payload) {
 				var out = unpack('BIIBBI', payload);
-				if (this.checkError(out[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.version = {
 					firmware: out[1],
 					internal: out[2],
@@ -298,32 +298,27 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.setToolheadTemperature = function(tool, temp) {
 		return this.queueCommand(
-			query(CONST.HOST_QUERY.TOOL_QUERY, tool, CONST.TOOL_QUERY.SET_TOOLHEAD_TEMP),
+			query2(pack('BBBi', HOST_QUERY.TOOL_QUERY, tool, TOOL_QUERY.SET_TOOLHEAD_TEMP, temp))
+		);
+	};
+
+	MLP.requestToolheadTemperature = function(tool) {
+		return this.queueCommand(
+			query(HOST_QUERY.TOOL_QUERY, tool, TOOL_QUERY.GET_TOOLHEAD_TEMP),
 			function (payload) {
 				var out = unpack('Bi', payload);
-				if (this.checkError(out[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.tool[tool].temp = out[1];
 			}.bind(this)
 		);
 	};
 
-	MLP.updateToolheadTemperature = function(tool) {
+	MLP.requestToolheadTargetTemperature = function(tool) {
 		return this.queueCommand(
-			query(CONST.HOST_QUERY.TOOL_QUERY, tool, CONST.TOOL_QUERY.GET_TOOLHEAD_TEMP),
+			query(HOST_QUERY.TOOL_QUERY, tool, TOOL_QUERY.GET_TOOLHEAD_TARGET_TEMP),
 			function (payload) {
 				var out = unpack('Bi', payload);
-				if (this.checkError(out[0],CONST.RESPONSE_CODE.SUCCESS)) return;
-				this.state.tool[tool].temp = out[1];
-			}.bind(this)
-		);
-	};
-
-	MLP.updateToolheadTargetTemperature = function(tool) {
-		return this.queueCommand(
-			query(CONST.HOST_QUERY.TOOL_QUERY, tool, CONST.TOOL_QUERY.GET_TOOLHEAD_TARGET_TEMP),
-			function (payload) {
-				var out = unpack('Bi', payload);
-				if (this.checkError(out[0],CONST.RESPONSE_CODE.SUCCESS)) return;
+				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.tool[tool].temp_target = out[1];
 			}.bind(this)
 		);
@@ -333,7 +328,7 @@ module.exports = (function MakerLinkModule() {
 	 * Wrap TCP conection
 	 */
 	function NetConn() {
-		this.decoder = null;
+		this.reader = null;
 		this.client = null;
 		this.buffer = [];
 		this.drain = true;
@@ -344,7 +339,7 @@ module.exports = (function MakerLinkModule() {
 	NetConn.prototype.open = function(host,port) {
 		if (this.client) throw "already connected";
 
-		this.decoder = new PacketStreamDecoder();
+		this.reader = new StreamReader();
 		this.client = new net.Socket();
 		this.client.on('data', function(data) { this.process(data) }.bind(this));
 		this.client.on('close', function() { this.close() }.bind(this));
@@ -365,7 +360,7 @@ module.exports = (function MakerLinkModule() {
 		if (this.client) {
 			this.client.destroy();
 			this.client = null;
-			this.decoder = null;
+			this.reader = null;
 		}
 	};
 
@@ -382,15 +377,15 @@ module.exports = (function MakerLinkModule() {
 		console.log({read:data});
 		try {
 			for (var i = 0; i < data.length; i++) {
-				this.decoder.nextByte(data[i]);
-				if (this.decoder.isPayloadReady()) {
-					var payload = this.decoder.payload;
-					this.decoder.reset();
+				this.reader.nextByte(data[i]);
+				if (this.reader.isDataReady()) {
+					var payload = this.reader.payload;
+					this.reader.reset();
 					this.emit('payload', payload);
 				}
 			}
 		} catch (err) {
-			this.decoder.reset();
+			this.reader.reset();
 			this.emit('error', err);
 		}
 	};
@@ -410,148 +405,32 @@ module.exports = (function MakerLinkModule() {
 	};
 
 	/**
-	 * CONST
-	 */
-
-	var CONST = {
-		PROTOCOL_STARTBYTE		: 0xD5,
-		MAX_PAYLOAD_LENGTH		: 32,
-		HOST_QUERY : {
-			'GET_VERSION'		: 0,
-			'BOOT_INIT'			: 1,
-			'GET_BUFFER_FREE'	: 2,
-			'CLEAR_BUFFER'		: 3,
-			'JOB_ABORT'			: 7,
-			'JOB_PAUSE_RESUME'	: 8,
-			'TOOL_QUERY'		: 10,
-			'CHECK_BUSY'		: 11,
-			'CAPTURE_TO_FILE'	: 14,
-			'END_CAPTURE'		: 15,
-			'PLAY_CAPTURE'		: 16,
-			'RESET'				: 17,
-			'GET_NEXT_FILENAME'	: 18,
-			'GET_BUILD_NAME'	: 20,
-			'GET_BOARD_STATE'	: 23,
-			'GET_BUILD_STATS'	: 24,
-			'GET_VERSION_EXT'	: 27
-		},
-		HOST_COMMAND: {
-			'SET_BUILD_PERCENT'	: 150
-		},
-		TOOL_QUERY : {
-			'GET_TOOLHEAD_TEMP'			: 2,
-			'GET_PLATFORM_TEMP'			: 30,
-			'GET_TOOLHEAD_TARGET_TEMP'	: 32,
-			'GET_PLATFORM_TARGET_TEMP'	: 33
-		},
-		TOOL_COMMAND : {
-			'SET_TOOLHEAD_TEMP'			: 3,
-			'SET_MOTOR_SPEED'			: 6,
-			'MOTOR_ENABLE_DISABLE'		: 10,
-			'FAN_ENABLE_DISABLE'		: 12,
-			'SET_PLATFORM_TEMP'			: 31
-		},
-		RESPONSE_CODE : {
-			'GENERIC_PACKET_ERROR'	: 0x80,
-			'SUCCESS'				: 0x81,
-			'ACTION_BUFFER_OVERFLOW': 0x82,
-			'CRC_MISMATCH'			: 0x83,
-			'COMMAND_NOT_SUPPORTED' : 0x85,
-			'DOWNSTREAM_TIMEOUT'	: 0x87,
-			'TOOL_LOCK_TIMEOUT'		: 0x88,
-			'CANCEL_BUILD'			: 0x89,
-			'ACTIVE_LOCAL_BUILD'	: 0x8A,
-			'OVERHEAT_STATE'		: 0x8B
-		},
-		BUILD_STATE: {
-			'0' : "Idle",
-			'1' : "Running",
-			'2' : "Complete",
-			'3' : "Paused",
-			'4' : "Cancelled",
-			'5' : "None Active"
-		}
-	};
-
-	var CRC_TABLE = [
-		0, 94, 188, 226, 97, 63, 221, 131, 194, 156, 126, 32, 163, 253, 31, 65,
-		157, 195, 33, 127, 252, 162, 64, 30, 95, 1, 227, 189, 62, 96, 130, 220,
-		35, 125, 159, 193, 66, 28, 254, 160, 225, 191, 93, 3, 128, 222, 60, 98,
-		190, 224, 2, 92, 223, 129, 99, 61, 124, 34, 192, 158, 29, 67, 161, 255,
-		70, 24, 250, 164, 39, 121, 155, 197, 132, 218, 56, 102, 229, 187, 89, 7,
-		219, 133, 103, 57, 186, 228, 6, 88, 25, 71, 165, 251, 120, 38, 196, 154,
-		101, 59, 217, 135, 4, 90, 184, 230, 167, 249, 27, 69, 198, 152, 122, 36,
-		248, 166, 68, 26, 153, 199, 37, 123, 58, 100, 134, 216, 91, 5, 231, 185,
-		140, 210, 48, 110, 237, 179, 81, 15, 78, 16, 242, 172, 47, 113, 147, 205,
-		17, 79, 173, 243, 112, 46, 204, 146, 211, 141, 111, 49, 178, 236, 14, 80,
-		175, 241, 19, 77, 206, 144, 114, 44, 109, 51, 209, 143, 12, 82, 176, 238,
-		50, 108, 142, 208, 83, 13, 239, 177, 240, 174, 76, 18, 145, 207, 45, 115,
-		202, 148, 118, 40, 171, 245, 23, 73, 8, 86, 180, 234, 105, 55, 213, 139,
-		87, 9, 235, 181, 54, 104, 138, 212, 149, 203, 41, 119, 244, 170, 72, 22,
-		233, 183, 85, 11, 136, 214, 52, 106, 43, 117, 151, 201, 74, 20, 246, 168,
-		116, 42, 200, 150, 21, 75, 169, 247, 182, 232, 10, 84, 215, 137, 107, 53
-	];
-
-	function checkSuccess(payload) {
-		if (payload[0] !== CONST.RESPONSE_CODE.SUCCESS) {
-			throw exception("request fail", "response code: "+payload[0], payload[0]);
-		}
-	};
-
-	function exception(name, message, code) {
-		return {"name":name, "message":message, code:code};
-	}
-
-	function CRC(payload) {
-		if (!payload) {
-			throw exception("Argument Exception", 'payload is null or undefined');
-		} else if (!(payload instanceof ArrayBuffer)) {
-			throw exception("Argument Exception", 'payload is not an ArrayBuffer');
-		}
-		var crc = 0;
-		for(var i = 0; i < payload.byteLength; ++i) {
-			crc = CRC_TABLE[crc ^ payload[i]];
-		}
-		return crc;
-	};
-
-	/**
 	 * Read S3G stream and emit packets
 	 */
 
-	function PacketStreamDecoder() {
-		this.state = this.STATE.WAIT_FOR_HEADER;
+	function StreamReader() {
+		this.state = PROTO.WAIT_FOR_HEADER;
 		this.payload = undefined;
 		this.payloadOffset = 0;
 		this.expectedLength = 0;
 	}
 
-	PacketStreamDecoder.prototype.STATE = {
-		WAIT_FOR_HEADER: 0,
-		WAIT_FOR_LENGTH: 1,
-		WAIT_FOR_DATA: 2,
-		WAIT_FOR_CRC: 3,
-		PAYLOAD_READY: 4
-	};
-
-	PacketStreamDecoder.prototype.nextByte = function (value) {
+	StreamReader.prototype.nextByte = function (value) {
 		switch (this.state) {
-			case this.STATE.WAIT_FOR_HEADER:
-				if (value !== CONST.PROTOCOL_STARTBYTE) {
+			case PROTO.WAIT_FOR_HEADER:
+				if (value !== PROTOCOL_STARTBYTE) {
 					throw exception('Packet Header Exception', 'invalid value ('+value+')');
 				}
-				this.state = this.STATE.WAIT_FOR_LENGTH;
+				this.state = PROTO.WAIT_FOR_LENGTH;
 				break;
-			
-			case this.STATE.WAIT_FOR_LENGTH:
-				if (value > CONST.MAX_PAYLOAD_LENGTH) {
-					throw exception('Packet Length Exception', 'length ('+ value +') greater than '+CONST.MAX_PAYLOAD_LENGTH);
+			case PROTO.WAIT_FOR_LENGTH:
+				if (value > MAX_PAYLOAD_LENGTH) {
+					throw exception('Packet Length Exception', 'length ('+ value +') greater than '+MAX_PAYLOAD_LENGTH);
 				}
 				this.expectedLength = value;
-				this.state = this.STATE.WAIT_FOR_DATA;
+				this.state = PROTO.WAIT_FOR_DATA;
 				break;
-
-			case this.STATE.WAIT_FOR_DATA:
+			case PROTO.WAIT_FOR_DATA:
 				if (!this.payload) {
 					this.payload = new ArrayBuffer(this.expectedLength);
 				}
@@ -560,30 +439,30 @@ module.exports = (function MakerLinkModule() {
 				if (this.payloadOffset > this.expectedLength) {
 					throw exception('Packet Length Exception', 'packet length greater than expected');
 				} else if (this.payloadOffset === this.expectedLength) {
-					this.state = this.STATE.WAIT_FOR_CRC;
+					this.state = PROTO.WAIT_FOR_CRC;
 				}
 				break;
-			case this.STATE.WAIT_FOR_CRC:
+			case PROTO.WAIT_FOR_CRC:
 				var crc = CRC(this.payload);
 				if (crc !== value){
 					throw exception('Packet CRC Exception', 'value mismatch');
 				}
-				this.state = this.STATE.PAYLOAD_READY;
+				this.state = PROTO.PAYLOAD_READY;
 				break;
 			default:
 				throw exception('Parser Exception', 'invalid state');
 		}
 	};
 
-	PacketStreamDecoder.prototype.reset = function() {
-		this.state = this.STATE.WAIT_FOR_HEADER;
+	StreamReader.prototype.reset = function() {
+		this.state = PROTO.WAIT_FOR_HEADER;
 		this.payload = undefined;
 		this.payloadOffset = 0;
 		this.expectedLength = 0;
 	};
 
-	PacketStreamDecoder.prototype.isPayloadReady = function() {
-		return this.state === this.STATE.PAYLOAD_READY;
+	StreamReader.prototype.isDataReady = function() {
+		return this.state === PROTO.PAYLOAD_READY;
 	};
 
 	/**
@@ -696,35 +575,138 @@ module.exports = (function MakerLinkModule() {
 		return out;
 	}
 
-	/**
-	* Create protocol message from ArrayBuffer
-	*
-	* @method encode
-	* @param {ArrayBuffer} payload Single Payload of s3g Protocol Message
-	* @return {ArrayBuffer} Returns packet on success, throws exceptions on failure
-	*/
 	function encode(payload) {
 		if (!payload) {
 			throw exception("Argument Exception", 'payload is null or undefined');
 		} else if (!(payload instanceof ArrayBuffer)) {
 			throw exception("Argument Exception", 'payload is not an ArrayBuffer');
-		} else if (payload.byteLength > CONST.MAX_PAYLOAD_LENGTH) {
-			throw exception("Packet Length Exception", 'payload length (' + payload.byteLength + ') is greater than max ('+ CONST.MAX_PAYLOAD_LENGTH + ').');
+		} else if (payload.byteLength > MAX_PAYLOAD_LENGTH) {
+			throw exception("Packet Length Exception", 'payload length (' + payload.byteLength + ') is greater than max ('+ MAX_PAYLOAD_LENGTH + ').');
 		}
 
-		// Create Packet
-		var len = payload.byteLength,
-		packet = new DataView(new ArrayBuffer(len + 3 /* Protocol Bytes */));
-		packet.setUint8(0, CONST.PROTOCOL_STARTBYTE);
-		packet.setUint8(1, len);
+		var i = 0,
+			j = 0,
+			len = payload.byteLength,
+			packet = new DataView(new ArrayBuffer(len + 3));
 
-		for (var i = 0, offset = 2; i < payload.byteLength; ++i, ++offset) {
-			packet.setUint8(offset, payload[i]);
-		}
+		packet.setUint8(i++, PROTOCOL_STARTBYTE);
+		packet.setUint8(i++, len);
+		while (j < payload.byteLength) packet.setUint8(i++, payload[j++]);
+		packet.setUint8(i, CRC(payload));
 
-		packet.setUint8(len + 2, CRC(payload));
 		return packet;
-	};
+	}
+
+	function checkSuccess(payload) {
+		if (payload[0] !== RESPONSE_CODE.SUCCESS) {
+			throw exception("request fail", "response code: "+payload[0], payload[0]);
+		}
+	}
+
+	function exception(name, message, code) {
+		return {"name":name, "message":message, code:code};
+	}
+
+	function CRC(payload) {
+		if (!payload) {
+			throw exception("Argument Exception", 'payload is null or undefined');
+		} else if (!(payload instanceof ArrayBuffer)) {
+			throw exception("Argument Exception", 'payload is not an ArrayBuffer');
+		}
+		var crc = 0;
+		for(var i = 0; i < payload.byteLength; ++i) {
+			crc = CRC_TABLE[crc ^ payload[i]];
+		}
+		return crc;
+	}
+
+	/**
+	 * CONST
+	 */
+
+	var PROTOCOL_STARTBYTE = 0xD5,
+		MAX_PAYLOAD_LENGTH = 32,
+		HOST_QUERY = {
+			'GET_VERSION'              : 0,
+			'BOOT_INIT'                : 1,
+			'GET_BUFFER_FREE'          : 2,
+			'CLEAR_BUFFER'             : 3,
+			'JOB_ABORT'                : 7,
+			'JOB_PAUSE_RESUME'         : 8,
+			'TOOL_QUERY'               : 10,
+			'CHECK_BUSY'               : 11,
+			'CAPTURE_TO_FILE'          : 14,
+			'END_CAPTURE'              : 15,
+			'PLAY_CAPTURE'             : 16,
+			'RESET'                    : 17,
+			'GET_NEXT_FILENAME'        : 18,
+			'GET_BUILD_NAME'           : 20,
+			'GET_BOARD_STATE'          : 23,
+			'GET_BUILD_STATS'          : 24,
+			'GET_VERSION_EXT'          : 27
+		},
+		HOST_COMMAND = {
+			'SET_BUILD_PERCENT'        : 150
+		},
+		TOOL_QUERY = {
+			'GET_TOOLHEAD_TEMP'        : 2,
+			'GET_PLATFORM_TEMP'        : 30,
+			'GET_TOOLHEAD_TARGET_TEMP' : 32,
+			'GET_PLATFORM_TARGET_TEMP' : 33
+		},
+		TOOL_COMMAND = {
+			'INIT_TOOL'                : 0,
+			'SET_TOOLHEAD_TEMP'        : 3,
+			'SET_MOTOR_SPEED'          : 6,
+			'MOTOR_ENABLE_DISABLE'     : 10,
+			'FAN_ENABLE_DISABLE'       : 12,
+			'SET_PLATFORM_TEMP'	       : 31
+		},
+		RESPONSE_CODE = {
+			'GENERIC_PACKET_ERROR'    : 0x80,
+			'SUCCESS'                 : 0x81,
+			'ACTION_BUFFER_OVERFLOW'  : 0x82,
+			'CRC_MISMATCH'            : 0x83,
+			'COMMAND_NOT_SUPPORTED'   : 0x85,
+			'DOWNSTREAM_TIMEOUT'      : 0x87,
+			'TOOL_LOCK_TIMEOUT'	      : 0x88,
+			'CANCEL_BUILD'            : 0x89,
+			'ACTIVE_LOCAL_BUILD'      : 0x8A,
+			'OVERHEAT_STATE'          : 0x8B
+		},
+		BUILD_STATE = {
+			'0' : "Idle",
+			'1' : "Running",
+			'2' : "Complete",
+			'3' : "Paused",
+			'4' : "Cancelled",
+			'5' : "None Active"
+		},
+		CRC_TABLE = [
+			0, 94, 188, 226, 97, 63, 221, 131, 194, 156, 126, 32, 163, 253, 31, 65,
+			157, 195, 33, 127, 252, 162, 64, 30, 95, 1, 227, 189, 62, 96, 130, 220,
+			35, 125, 159, 193, 66, 28, 254, 160, 225, 191, 93, 3, 128, 222, 60, 98,
+			190, 224, 2, 92, 223, 129, 99, 61, 124, 34, 192, 158, 29, 67, 161, 255,
+			70, 24, 250, 164, 39, 121, 155, 197, 132, 218, 56, 102, 229, 187, 89, 7,
+			219, 133, 103, 57, 186, 228, 6, 88, 25, 71, 165, 251, 120, 38, 196, 154,
+			101, 59, 217, 135, 4, 90, 184, 230, 167, 249, 27, 69, 198, 152, 122, 36,
+			248, 166, 68, 26, 153, 199, 37, 123, 58, 100, 134, 216, 91, 5, 231, 185,
+			140, 210, 48, 110, 237, 179, 81, 15, 78, 16, 242, 172, 47, 113, 147, 205,
+			17, 79, 173, 243, 112, 46, 204, 146, 211, 141, 111, 49, 178, 236, 14, 80,
+			175, 241, 19, 77, 206, 144, 114, 44, 109, 51, 209, 143, 12, 82, 176, 238,
+			50, 108, 142, 208, 83, 13, 239, 177, 240, 174, 76, 18, 145, 207, 45, 115,
+			202, 148, 118, 40, 171, 245, 23, 73, 8, 86, 180, 234, 105, 55, 213, 139,
+			87, 9, 235, 181, 54, 104, 138, 212, 149, 203, 41, 119, 244, 170, 72, 22,
+			233, 183, 85, 11, 136, 214, 52, 106, 43, 117, 151, 201, 74, 20, 246, 168,
+			116, 42, 200, 150, 21, 75, 169, 247, 182, 232, 10, 84, 215, 137, 107, 53
+		],
+		PROTO = {
+			WAIT_FOR_HEADER: 0,
+			WAIT_FOR_LENGTH: 1,
+			WAIT_FOR_DATA: 2,
+			WAIT_FOR_CRC: 3,
+			PAYLOAD_READY: 4
+		};
 
 	return MakerLink;
 

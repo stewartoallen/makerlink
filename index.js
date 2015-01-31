@@ -6,18 +6,19 @@ function probe(host, port) {
 	link
 //		.bootInit()
 //		.clearBuffer() // causes bot to be unresponsive for a few millis or ignore next command
-		.updateBufferFree()
-		.updateBuildName()
-		.updateBuildStatistics()
-		.updateToolheadTemperature(0)
-		.updateToolheadTargetTemperature(0)
+		.requestBufferFree()
+		.requestBuildName()
+		.requestBuildStatistics()
+		.setToolheadTemperature(0,30)
+		.requestToolheadTemperature(0)
+		.requestToolheadTargetTemperature(0)
 //		.captureToFile('capture.x3g')
 //		.endCapture()
-		.updateFileList()
-		.updateBusy()
-		.updateBufferFree()
-		.updateBoardState()
-		.updateVersionExt()
+		.requestFileList()
+		.requestBusyState()
+		.requestBufferFree()
+		.requestBoardState()
+		.requestVersionExt()
 		.onReady(function(ml) {
 			console.log(ml.state);
 		});
