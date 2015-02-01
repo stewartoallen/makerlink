@@ -7,6 +7,7 @@ function probe(host, port) {
 //		.bootInit()
 //		.clearBuffer() // causes bot to be unresponsive for a few millis or ignore next command
 
+		.requestBusyState()
 		.requestBufferFree()
 		.requestBuildName()
 		.requestBuildStatistics()
@@ -17,16 +18,11 @@ function probe(host, port) {
 		.requestToolheadTargetTemperature(0)
 		*/
 
-		.captureToFile('capture.x3g')
+		.captureToFile('capture2.x3g')
 		.setToolheadTemperature(0,100)
 		.endCapture()
-		/*
-		*/
 
-		/*
-		*/
 		.requestFileList() // kills a running print job
-//		.requestBusyState()
 		.requestBufferFree()
 		.requestBoardState()
 		.requestVersionExt()

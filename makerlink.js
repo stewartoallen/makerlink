@@ -11,7 +11,7 @@ module.exports = (function MakerLinkModule() {
 		this.conn = new NetConn();
 
 		this.conn.on('payload', function (payload) {
-			var q = this.queue,
+			var q = this.queueIn,
 				fn = q.shift();
 			if (fn) fn(payload);
 			this.callOnReady();
@@ -43,22 +43,23 @@ module.exports = (function MakerLinkModule() {
 			busy: false
 		};
 
-		this.queue = [];
+		this.queueIn = [];
 		this.queueOut = [];
 		this.errors = [];
 		this.onReadyQ = [];
+		this.sdmore = false;
 	};
 
 	var MLP = MakerLink.prototype;
 
 	// used for some command execution pre-checks
 	function isIdle() {
-		return this.state.busy;
+		return !this.state.busy;
 	}
 
 	MLP.resetComms = function() {
 		this.conn.drain();
-		this.queue = [];
+		this.queueIn = [];
 		this.callOnReady();
 	};
 
@@ -74,7 +75,7 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.callOnReady = function() {
 		this.checkQueueOut();
-		var i = 0, q = this.queue, onr = this.onReadyQ, err = this.errors, call;
+		var i = 0, q = this.queueIn, onr = this.onReadyQ, err = this.errors, call;
 		if (q.length > 0 && err.length === 0) return;
 		while (i < onr.length) {
 			call = onr[i++];
@@ -107,10 +108,10 @@ module.exports = (function MakerLinkModule() {
 	};
 
 	MLP.checkQueueOut = function() {
-		while (this.queueOut.length > 0 && this.queue.length < maxQ) {
+		while (this.queueOut.length > 0 && this.queueIn.length < maxQ) {
 			var next = this.queueOut.shift();
 			if (next.prerun && !next.prerun()) continue;
-			this.queue.push(next.callback || checkSuccess);
+			this.queueIn.push(next.callback || checkSuccess);
 			this.conn.write(next.packet);
 		}
 	};
@@ -150,15 +151,15 @@ module.exports = (function MakerLinkModule() {
 	 * becomes temporarily unresponsive
 	 */
 	MLP.jobAbort = function() {
-		return this.queueCommand( hostCommand(HOST_QUERY.JOB_ABORT) );
+		return this.queueCommand(hostCommand(HOST_QUERY.JOB_ABORT));
 	}
 
 	MLP.jobPauseResume = function() {
-		return this.queueCommand( hostCommand(HOST_QUERY.JOB_PAUSE_RESUME) );
+		return this.queueCommand(hostCommand(HOST_QUERY.JOB_PAUSE_RESUME));
 	}
 
 	MLP.jobSetPercent = function(percent) {
-		return this.queueCommand( query2(pack('BB', HOST_QUERY.JOB_PAUSE_RESUME, percent)) );
+		return this.queueCommand(hostCommand(HOST_QUERY.JOB_PAUSE_RESUME, 'B', [percent]));
 	}
 
 	/** check if bot is busy with commands in queue */
@@ -220,7 +221,7 @@ module.exports = (function MakerLinkModule() {
 		if (!filename) throw "missing filename";
 		if (filename.length > MAX_FILE_NAME) throw "filename too long";
 		return this.queueCommand(
-			query2(pack('BS', HOST_QUERY.CAPTURE_TO_FILE, filename)),
+			hostCommand(HOST_QUERY.CAPTURE_TO_FILE, 'S', [filename]),
 			function (payload) {
 				if (this.checkError(payload[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.capture = { begin:payload[1] };
@@ -230,7 +231,7 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.endCapture = function(filename) {
 		return this.queueCommand(
-			query2(pack('B', HOST_QUERY.END_CAPTURE)),
+			hostCommand(HOST_QUERY.END_CAPTURE),
 			function (payload) {
 				var out = unpack('BL', payload);
 				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
@@ -243,7 +244,7 @@ module.exports = (function MakerLinkModule() {
 		if (!filename) throw "missing filename";
 		if (filename.length > MAX_FILE_NAME) throw "filename too long";
 		return this.requestBusyState().queueCommand(
-			query2(pack('BS', HOST_QUERY.PLAY_CAPTURE, filename)),
+			hostCommand(HOST_QUERY.PLAY_CAPTURE, 'S', [filename]),
 			function (payload) {
 				if (this.checkError(payload[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.playback = payload[1];
@@ -257,7 +258,7 @@ module.exports = (function MakerLinkModule() {
 			sd_rc = out[1], // what is SD response code for? always zero?
 			file = out[2];
 		if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
-		if (!more) this.state.sdcard = [];
+		if (!this.sdmore) this.state.sdcard = [];
 		if (file && file != '') {
 			this.requestFileList(true);
 			this.state.sdcard.push(file);
@@ -266,7 +267,9 @@ module.exports = (function MakerLinkModule() {
 
 	// will kill a running job
 	MLP.requestFileList = function(more) {
-		return this.requestBusyState().queueCommand(
+		this.sdmore = more;
+		if (!more) this.requestBusyState();
+		return this.queueCommand(
 			hostCommand(HOST_QUERY.GET_NEXT_FILENAME, 'B', [more ? 0 : 1]),
 			processFileList.bind(this),
 			isIdle.bind(this)
@@ -275,7 +278,7 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.requestVersion = function(filename) {
 		return this.queueCommand(
-			query2(pack('BI', HOST_QUERY.GET_VERSION, 100)),
+			hostCommand(HOST_QUERY.GET_VERSION, 'I', [100]),
 			function (payload) {
 				var out = unpack('BI', payload);
 				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
@@ -286,7 +289,7 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.requestVersionExt = function(filename) {
 		return this.queueCommand(
-			query2(pack('BI', HOST_QUERY.GET_VERSION_EXT, 100)),
+			hostCommand(HOST_QUERY.GET_VERSION_EXT, 'I', [100]),
 			function (payload) {
 				var out = unpack('BIIBBI', payload);
 				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
@@ -303,13 +306,13 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.findAxesMinimums = function(axes_bits, rate, timeout) {
 		return this.queueCommand(
-			query2(pack('BBLI', HOST_QUERY.FIND_AXES_MIN, axes_bits, rate, timeout))
+			hostCommand(HOST_QUERY.FIND_AXES_MIN, 'BLI', [axes_bits, rate, timeout])
 		);
 	};
 
 	MLP.findAxesMaximums = function(filename) {
 		return this.queueCommand(
-			query2(pack('BBLI', HOST_QUERY.FIND_AXES_MAX, axes_bits, rate, timeout))
+			hostCommand(HOST_QUERY.FIND_AXES_MAX, 'BLI', [axes_bits, rate, timeout])
 		);
 	};
 
@@ -487,52 +490,6 @@ module.exports = (function MakerLinkModule() {
 	/**
 	 * Stream utility functions
 	 */
-
-	function query() {
-		var payload = new ArrayBuffer(arguments.length);
-		for (var i = 0; i < arguments.length; ++i) {
-			payload[i] = arguments[i];
-		}
-		var packet = encode(payload);
-		var buffer = new Buffer(packet.byteLength, false);
-		for (var i = 0; i < packet.byteLength; ++i) {
-			buffer[i] = packet[i];
-		}
-		return buffer;
-	}
-
-	function query2(packed) {
-		var enc = encode(packed),
-			len = enc.byteLength,
-			buf = new Buffer(len, false),
-			i = 0;
-		while (i < len) buf[i] = enc[i++];
-		return buf;
-	}
-
-	function toolAction(tool, command, packed_args) {
-		return query2(
-			concatArrayBuffers(
-				pack('BBBB', HOST_COMMAND.TOOL_ACTION, tool, command, packed_args.byteLength),
-				packed_args
-			)
-		);
-	}
-
-	function concatArrayBuffers(a1, a2) {
-		var l1 = a1.byteLength,
-			l2 = a2.byteLength,
-			len = l1 + l2,
-			i = 0,
-			j = 0,
-			nab = new ArrayBuffer(len),
-			dv1 = new DataView(a1),
-			dv2 = new DataView(a2),
-			dv3 = new DataView(nab);
-		while (i < l1) dv3.setUint8(i, dv1.getUint8(i++));
-		while (j < l2) dv3.setUint8(i + j, dv2.getUint8(j++));
-		return nab;
-	}
 
 	function toBuffer(ab) {
 		var len = ab.byteLength,
