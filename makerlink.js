@@ -47,7 +47,6 @@ module.exports = (function MakerLinkModule() {
 		this.queueOut = [];
 		this.errors = [];
 		this.onReadyQ = [];
-		this.sdmore = false;
 	};
 
 	var MLP = MakerLink.prototype;
@@ -220,6 +219,7 @@ module.exports = (function MakerLinkModule() {
 		);
 	};
 
+	// will kill a running job ... check idle
 	MLP.playbackFile = function(filename) {
 		if (!filename) throw "missing filename";
 		if (filename.length > MAX_FILE_NAME) throw "filename too long";
@@ -230,26 +230,20 @@ module.exports = (function MakerLinkModule() {
 		);
 	};
 
-	function processFileList(payload) {
-		var out = unpack('BBS', payload),
-			sd_rc = out[1], // what is SD response code for? always zero?
-			file = out[2];
-		if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
-		if (!this.sdmore) this.state.sdcard = [];
-		if (file && file != '') {
-			this.requestFileList(true);
-			this.state.sdcard.push(file);
-		}
-	}
-
-	// will kill a running job
+	// will kill a running job ... check idle
 	MLP.requestFileList = function(more) {
-		this.sdmore = more;
 		if (!more) this.requestBusyState();
 		return this.queueCommand(
 			hostCommand(HOST_QUERY.GET_NEXT_FILENAME, 'B', [more ? 0 : 1]),
-			// todo switch to hostReply()
-			processFileList.bind(this),
+			hostReply('BS', function(out) {
+				var sd_rc = out[0], // what is SD response code for? always zero?
+					file = out[1];
+				if (!more) this.state.sdcard = [];
+				if (file && file != '') {
+					this.requestFileList(true);
+					this.state.sdcard.push(file);
+				}
+			}),
 			isIdle
 		);
 	};
