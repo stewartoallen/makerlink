@@ -13,7 +13,7 @@ module.exports = (function MakerLinkModule() {
 		this.conn.on('payload', function (payload) {
 			//console.log({payload:payload});
 			var q = this.queue,
-				fn = q.splice(0,1)[0];
+				fn = q.shift();
 			if (fn) fn(payload);
 			this.callOnReady();
 		}.bind(this));
@@ -112,7 +112,7 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.checkQueueOut = function() {
 		while (this.queueOut.length > 0 && this.queue.length < maxQ) {
-			var next = this.queueOut.splice(0,1)[0];
+			var next = this.queueOut.shift();
 			this.queue.push(next.callback || checkSuccess);
 			this.conn.write(next.packet);
 		}
@@ -121,7 +121,7 @@ module.exports = (function MakerLinkModule() {
 	/** HOST COMMANDS */
 
 	MLP.bootInit = function() {
-		return this.queueCommand( query(HOST_QUERY.BOOT_INIT) );
+		return this.queueCommand( hostCommand(HOST_QUERY.BOOT_INIT) );
 	}
 
 	/**
@@ -130,12 +130,12 @@ module.exports = (function MakerLinkModule() {
 	 * milliseconds after this command is ACKd.
 	 */
 	MLP.clearBuffer = function() {
-		return this.queueCommand( query(HOST_QUERY.CLEAR_BUFFER) );
+		return this.queueCommand( hostCommand(HOST_QUERY.CLEAR_BUFFER) );
 	}
 
 	MLP.requestBufferFree = function() {
 		return this.queueCommand(
-			query(HOST_QUERY.GET_BUFFER_FREE),
+			hostCommand(HOST_QUERY.GET_BUFFER_FREE),
 			function (payload) {
 				var out = unpack('BL', payload);
 				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
@@ -145,7 +145,7 @@ module.exports = (function MakerLinkModule() {
 	}
 
 	MLP.resetBot = function() {
-		return this.queueCommand( query(HOST_QUERY.RESET) );
+		return this.queueCommand( hostCommand(HOST_QUERY.RESET) );
 	}
 
 	/**
@@ -153,11 +153,11 @@ module.exports = (function MakerLinkModule() {
 	 * becomes temporarily unresponsive
 	 */
 	MLP.jobAbort = function() {
-		return this.queueCommand( query(HOST_QUERY.JOB_ABORT) );
+		return this.queueCommand( hostCommand(HOST_QUERY.JOB_ABORT) );
 	}
 
 	MLP.jobPauseResume = function() {
-		return this.queueCommand( query(HOST_QUERY.JOB_PAUSE_RESUME) );
+		return this.queueCommand( hostCommand(HOST_QUERY.JOB_PAUSE_RESUME) );
 	}
 
 	MLP.jobSetPercent = function(percent) {
@@ -167,7 +167,7 @@ module.exports = (function MakerLinkModule() {
 	/** check if bot is busy with commands in queue */
 	MLP.requestBusyState = function() {
 		return this.queueCommand(
-			query(HOST_QUERY.CHECK_BUSY),
+			hostCommand(HOST_QUERY.CHECK_BUSY),
 			function (payload) {
 				if (this.checkError(payload[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.busy = payload[1] === 0;
@@ -177,7 +177,7 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.requestBuildName = function() {
 		return this.queueCommand(
-			query(HOST_QUERY.GET_BUILD_NAME),
+			hostCommand(HOST_QUERY.GET_BUILD_NAME),
 			function (payload) {
 				var out = unpack('BS', payload);
 				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
@@ -188,7 +188,7 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.requestBoardState = function() {
 		return this.queueCommand(
-			query(HOST_QUERY.GET_BOARD_STATE),
+			hostCommand(HOST_QUERY.GET_BOARD_STATE),
 			function (payload) {
 				if (this.checkError(payload[0],RESPONSE_CODE.SUCCESS)) return;
 				var bits = payload[1], info = [];
@@ -208,7 +208,7 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.requestBuildStatistics = function() {
 		return this.queueCommand(
-			query(HOST_QUERY.GET_BUILD_STATS),
+			hostCommand(HOST_QUERY.GET_BUILD_STATS),
 			function (payload) {
 				if (this.checkError(payload[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.build.flag = payload[1];
@@ -221,7 +221,7 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.captureToFile = function(filename) {
 		if (!filename) throw "missing filename";
-		if (filename.length > 12) throw "filename too long";
+		if (filename.length > MAX_FILE_NAME) throw "filename too long";
 		return this.queueCommand(
 			query2(pack('BS', HOST_QUERY.CAPTURE_TO_FILE, filename)),
 			function (payload) {
@@ -244,7 +244,7 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.playbackFile = function(filename) {
 		if (!filename) throw "missing filename";
-//		if (filename.length > 12) throw "filename too long";
+		if (filename.length > MAX_FILE_NAME) throw "filename too long";
 		return this.queueCommand(
 			query2(pack('BS', HOST_QUERY.PLAY_CAPTURE, filename)),
 			function (payload) {
@@ -256,7 +256,7 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.requestFileList = function(more) {
 		return this.queueCommand(
-			query(HOST_QUERY.GET_NEXT_FILENAME, more ? 0 : 1),
+			hostCommand(HOST_QUERY.GET_NEXT_FILENAME, 'B', [more ? 0 : 1]),
 			function (payload) {
 				var out = unpack('BBS', payload),
 					sd_rc = out[1], // what is SD response code for? always zero?
@@ -315,13 +315,13 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.setToolheadTemperature = function(tool, temp) {
 		return this.queueCommand(
-			toolAction(tool, TOOL_COMMAND.SET_TOOLHEAD_TEMP, pack('i',  temp))
+			toolCommand(tool, TOOL_COMMAND.SET_TOOLHEAD_TEMP, 'i', [temp])
 		);
 	};
 
 	MLP.requestToolheadTemperature = function(tool) {
 		return this.queueCommand(
-			query(HOST_QUERY.TOOL_QUERY, tool, TOOL_QUERY.GET_TOOLHEAD_TEMP),
+			toolQuery(tool, TOOL_QUERY.GET_TOOLHEAD_TEMP),
 			function (payload) {
 				var out = unpack('Bi', payload);
 				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
@@ -332,7 +332,7 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.requestToolheadTargetTemperature = function(tool) {
 		return this.queueCommand(
-			query(HOST_QUERY.TOOL_QUERY, tool, TOOL_QUERY.GET_TOOLHEAD_TARGET_TEMP),
+			toolQuery(tool, TOOL_QUERY.GET_TOOLHEAD_TARGET_TEMP),
 			function (payload) {
 				var out = unpack('Bi', payload);
 				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
@@ -532,16 +532,56 @@ module.exports = (function MakerLinkModule() {
 		return nab;
 	}
 
+	function toBuffer(ab) {
+		var len = ab.byteLength,
+			buf = new Buffer(len, false),
+			i = 0;
+		while (i < len) buf[i] = ab[i++];
+		return buf;
+	}
+
+	function hostCommand(cmd, def, args) {
+		if (!def) {
+			def = 'B';
+			args = [cmd];
+		} else {
+			def = 'B' + def;
+			args.unshift(cmd);
+		}
+		var buf = new ArrayBuffer(256),
+			off = _pack(def,buf,2,args,0),
+			crc = CRC(buf,2,off);
+		_pack('BB',buf,0,[PROTOCOL_STARTBYTE,off-2],0);
+		_pack('B',buf,off,[crc],0);
+		return toBuffer(buf.slice(0,off+1));
+	}
+
+	function toolQuery(tool, cmd) {
+		return hostCommand(HOST_QUERY.TOOL_QUERY, 'BB', [tool, cmd]);
+	}
+
+	function toolCommand(tool, cmd, def, args) {
+		var buf = new ArrayBuffer(256),
+			off = _pack(def,buf,6,args,0),
+			len = _pack('BBBB',buf,2,[HOST_COMMAND.TOOL_ACTION, tool, cmd, off-6],0), 
+			crc = CRC(buf,2,off);
+		_pack('BB',buf,0,[PROTOCOL_STARTBYTE,off-2],0);
+		_pack('B',buf,off,[crc],0);
+		return toBuffer(buf.slice(0,off+1));
+	}
+
 	function pack(def) {
-		var i = 1,
-			j = 0,
-			off = 0,
-			arg = arguments,
-			len = arg.length,
-			out = new ArrayBuffer(256),
-			view = new DataView(out);
-		while (i < len) {
-			var param = arg[i++];
+		var buf = new ArrayBuffer(256),
+			off = _pack(def,buf,0,arguments,1);
+		return buf.slice(0,off);
+	}
+
+	function _pack(def,buf,off,args,argi) {
+		var j = 0,
+			len = args.length,
+			view = new DataView(buf);
+		while (argi < len) {
+			var param = args[argi++];
 			switch (def[j++]) {
 				case 'B':
 					view.setUint8(off++, param);
@@ -572,7 +612,7 @@ module.exports = (function MakerLinkModule() {
 					throw "illegal def: "+def;
 			}
 		}
-		return out.slice(0,off);
+		return off;
 	}
 
 	function unpack(def,buf) {
@@ -619,8 +659,8 @@ module.exports = (function MakerLinkModule() {
 	function encode(payload) {
 		if (!payload) {
 			throw exception("Argument Exception", 'payload is null or undefined');
-//		} else if (!(payload instanceof ArrayBuffer)) {
-//			throw exception("Argument Exception", 'payload is not an ArrayBuffer');
+		} else if (!(payload instanceof ArrayBuffer)) {
+			throw exception("Argument Exception", 'payload is not an ArrayBuffer');
 		} else if (payload.byteLength > MAX_PAYLOAD_LENGTH) {
 			throw exception("Packet Length Exception", 'payload length (' + payload.byteLength + ') is greater than max ('+ MAX_PAYLOAD_LENGTH + ').');
 		}
@@ -648,16 +688,16 @@ module.exports = (function MakerLinkModule() {
 		return {"name":name, "message":message, code:code};
 	}
 
-	function CRC(payload) {
+	function CRC(payload,off,len) {
 		if (!payload) {
 			throw exception("Argument Exception", 'payload is null or undefined');
-//		} else if (!(payload instanceof ArrayBuffer)) {
-//			throw exception("Argument Exception", 'payload is not an ArrayBuffer');
+		} else if (!(payload instanceof ArrayBuffer)) {
+			throw exception("Argument Exception", 'payload is not an ArrayBuffer');
 		}
-		var i = 0,
+		var i = off || 0,
 			crc = 0,
-			len = payload.byteLength;
-		while (i < len) crc = CRC_TABLE[crc ^ payload[i++]];
+			max = len || payload.byteLength;
+		while (i < max) crc = CRC_TABLE[crc ^ payload[i++]];
 		return crc;
 	}
 
@@ -667,6 +707,7 @@ module.exports = (function MakerLinkModule() {
 
 	var PROTOCOL_STARTBYTE = 0xD5,
 		MAX_PAYLOAD_LENGTH = 32,
+		MAX_FILE_NAME = 32,
 		HOST_QUERY = {
 			'GET_VERSION'              : 0,
 			'BOOT_INIT'                : 1,

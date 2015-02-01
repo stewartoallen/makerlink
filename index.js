@@ -7,21 +7,30 @@ function probe(host, port) {
 //		.bootInit()
 //		.clearBuffer() // causes bot to be unresponsive for a few millis or ignore next command
 
-//		.requestBufferFree()
-//		.requestBuildName()
-//		.requestBuildStatistics()
-		.setToolheadTemperature(0,0)
+		.requestBufferFree()
+		.requestBuildName()
+		.requestBuildStatistics()
+		/*
+		*/
+
+//		.setToolheadTemperature(0,0)
 		.requestToolheadTemperature(0)
 		.requestToolheadTargetTemperature(0)
+		/*
+		*/
 
-//		.captureToFile('capture.x3g')
-//		.endCapture()
+		/*
+		.captureToFile('capture.x3g')
+		.endCapture()
+		*/
 
-//		.requestFileList()
-//		.requestBusyState()
-//		.requestBufferFree()
-//		.requestBoardState()
-//		.requestVersionExt()
+		.requestFileList()
+		.requestBusyState()
+		.requestBufferFree()
+		.requestBoardState()
+		.requestVersionExt()
+		/*
+		*/
 
 //		.jobAbort()
 		.onReady(function(ml) {
