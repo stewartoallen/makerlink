@@ -12,11 +12,9 @@ function probe(host, port) {
 		.requestBuildName()
 		.requestBuildStatistics()
 
-		/*
 		.setToolheadTemperature(0,0)
 		.requestToolheadTemperature(0)
 		.requestToolheadTargetTemperature(0)
-		*/
 
 		.captureToFile('capture2.x3g')
 		.setToolheadTemperature(0,100)

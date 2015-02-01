@@ -210,12 +210,6 @@ module.exports = (function MakerLinkModule() {
 		return this.queueCommand(
 			hostCommand(HOST_QUERY.CAPTURE_TO_FILE, 'S', [filename]),
 			hostReply('B', function(out) { this.state.capture = { begin:out[0] } })
-			/*
-			function (payload) {
-				if (this.checkError(payload[0],RESPONSE_CODE.SUCCESS)) return;
-				this.state.capture = { begin:payload[1] };
-			}.bind(this)
-			*/
 		);
 	};
 
@@ -223,13 +217,6 @@ module.exports = (function MakerLinkModule() {
 		return this.queueCommand(
 			hostCommand(HOST_QUERY.END_CAPTURE),
 			hostReply('L', function(out) { this.state.capture.end = out[0] })
-			/*
-			function (payload) {
-				var out = unpack('BL', payload);
-				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
-				this.state.capture.end = out[1];
-			}.bind(this)
-			*/
 		);
 	};
 
@@ -238,13 +225,7 @@ module.exports = (function MakerLinkModule() {
 		if (filename.length > MAX_FILE_NAME) throw "filename too long";
 		return this.requestBusyState().queueCommand(
 			hostCommand(HOST_QUERY.PLAY_CAPTURE, 'S', [filename]),
-			hostReply('S', function(out) { this.state.playback = out[0] }),
-			/*
-			function (payload) {
-				if (this.checkError(payload[0],RESPONSE_CODE.SUCCESS)) return;
-				this.state.playback = payload[1];
-			}.bind(this),
-			*/
+			hostReply('B', function(out) { this.state.playback = out[0] }),
 			isIdle
 		);
 	};
@@ -277,13 +258,6 @@ module.exports = (function MakerLinkModule() {
 		return this.queueCommand(
 			hostCommand(HOST_QUERY.GET_VERSION, 'I', [100]),
 			hostReply('I', function(out) { this.state.version = out[0] })
-			/*
-			function (payload) {
-				var out = unpack('BI', payload);
-				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
-				this.state.version = { firmware: out[1] };
-			}.bind(this)
-			*/
 		);
 	};
 
@@ -299,19 +273,6 @@ module.exports = (function MakerLinkModule() {
 					res2: out[4]
 				};
 			})
-			/*
-			function (payload) {
-				var out = unpack('BIIBBI', payload);
-				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
-				this.state.version = {
-					firmware: out[1],
-					internal: out[2],
-					variant: out[3],
-					res1: out[4],
-					res2: out[5]
-				};
-			}.bind(this)
-			*/
 		);
 	};
 
@@ -331,29 +292,21 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.setToolheadTemperature = function(tool, temp) {
 		return this.queueCommand(
-			toolCommand(tool, TOOL_COMMAND.SET_TOOLHEAD_TEMP, 'i', [temp])
+			toolCommand(tool, TOOL_CMD.SET_TOOLHEAD_TEMP, 'i', [temp])
 		);
 	};
 
 	MLP.requestToolheadTemperature = function(tool) {
 		return this.queueCommand(
 			toolQuery(tool, TOOL_QUERY.GET_TOOLHEAD_TEMP),
-			function (payload) {
-				var out = unpack('Bi', payload);
-				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
-				this.state.tool[tool].temp = out[1];
-			}.bind(this)
+			hostReply('i', function(out) { this.state.tool[tool].temp = out[0] })
 		);
 	};
 
 	MLP.requestToolheadTargetTemperature = function(tool) {
 		return this.queueCommand(
 			toolQuery(tool, TOOL_QUERY.GET_TOOLHEAD_TARGET_TEMP),
-			function (payload) {
-				var out = unpack('Bi', payload);
-				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
-				this.state.tool[tool].temp_target = out[1];
-			}.bind(this)
+			hostReply('i', function(out) { this.state.tool[tool].temp_target = out[0] })
 		);
 	};
 
@@ -519,10 +472,10 @@ module.exports = (function MakerLinkModule() {
 			args.unshift(cmd);
 		}
 		var buf = new ArrayBuffer(256),
-			off = _pack(def,buf,2,args,0),
+			off = pack(def,buf,2,args,0),
 			crc = CRC(buf,2,off);
-		_pack('BB',buf,0,[PROTOCOL_STARTBYTE,off-2],0);
-		_pack('B',buf,off,[crc],0);
+		pack('BB',buf,0,[PROTOCOL_STARTBYTE,off-2],0);
+		pack('B',buf,off,[crc],0);
 		return toBuffer(buf.slice(0,off+1));
 	}
 
@@ -540,21 +493,15 @@ module.exports = (function MakerLinkModule() {
 
 	function toolCommand(tool, cmd, def, args) {
 		var buf = new ArrayBuffer(256),
-			off = _pack(def,buf,6,args,0),
-			len = _pack('BBBB',buf,2,[HOST_COMMAND.TOOL_ACTION, tool, cmd, off-6],0), 
+			off = pack(def,buf,6,args,0),
+			len = pack('BBBB',buf,2,[HOST_CMD.TOOL_ACTION, tool, cmd, off-6],0), 
 			crc = CRC(buf,2,off);
-		_pack('BB',buf,0,[PROTOCOL_STARTBYTE,off-2],0);
-		_pack('B',buf,off,[crc],0);
+		pack('BB',buf,0,[PROTOCOL_STARTBYTE,off-2],0);
+		pack('B',buf,off,[crc],0);
 		return toBuffer(buf.slice(0,off+1));
 	}
 
-	function pack(def) {
-		var buf = new ArrayBuffer(256),
-			off = _pack(def,buf,0,arguments,1);
-		return buf.slice(0,off);
-	}
-
-	function _pack(def,buf,off,args,argi) {
+	function pack(def,buf,off,args,argi) {
 		var j = 0,
 			len = args.length,
 			view = new DataView(buf);
@@ -634,28 +581,6 @@ module.exports = (function MakerLinkModule() {
 		return out;
 	}
 
-	function encode(payload) {
-		if (!payload) {
-			throw exception("Argument Exception", 'payload is null or undefined');
-		} else if (!(payload instanceof ArrayBuffer)) {
-			throw exception("Argument Exception", 'payload is not an ArrayBuffer');
-		} else if (payload.byteLength > MAX_PAYLOAD_LENGTH) {
-			throw exception("Packet Length Exception", 'payload length (' + payload.byteLength + ') is greater than max ('+ MAX_PAYLOAD_LENGTH + ').');
-		}
-
-		var i = 0,
-			j = 0,
-			len = payload.byteLength,
-			packet = new DataView(new ArrayBuffer(len + 3));
-
-		packet.setUint8(i++, PROTOCOL_STARTBYTE);
-		packet.setUint8(i++, len);
-		while (j < payload.byteLength) packet.setUint8(i++, payload[j++]);
-		packet.setUint8(i, CRC(payload));
-
-		return packet;
-	}
-
 	function checkSuccess(payload) {
 		if (payload[0] !== RESPONSE_CODE.SUCCESS) {
 			throw exception("request fail", "response code: "+payload[0], payload[0]);
@@ -705,7 +630,7 @@ module.exports = (function MakerLinkModule() {
 			'GET_BUILD_STATS'          : 24,
 			'GET_VERSION_EXT'          : 27
 		},
-		HOST_COMMAND = {
+		HOST_CMD = {
 			'FIND_AXES_MIN'            : 131,
 			'FIND_AXES_MAX'            : 132,
 			'DELAY'                    : 133,
@@ -720,7 +645,7 @@ module.exports = (function MakerLinkModule() {
 			'GET_TOOLHEAD_TARGET_TEMP' : 32,
 			'GET_PLATFORM_TARGET_TEMP' : 33
 		},
-		TOOL_COMMAND = {
+		TOOL_CMD = {
 			'INIT_TOOL'                : 0,
 			'SET_TOOLHEAD_TEMP'        : 3,
 			'SET_MOTOR_SPEED'          : 6,
