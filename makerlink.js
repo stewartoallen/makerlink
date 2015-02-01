@@ -12,7 +12,7 @@ module.exports = (function MakerLinkModule() {
 
 		this.conn.on('payload', function (payload) {
 			var q = this.queueIn,
-				fn = q.shift();
+				fn = q.shift().bind(this);
 			if (fn) fn(payload);
 			this.callOnReady();
 		}.bind(this));
@@ -110,7 +110,7 @@ module.exports = (function MakerLinkModule() {
 	MLP.checkQueueOut = function() {
 		while (this.queueOut.length > 0 && this.queueIn.length < maxQ) {
 			var next = this.queueOut.shift();
-			if (next.prerun && !next.prerun()) continue;
+			if (next.prerun && !next.prerun.bind(this)()) continue;
 			this.queueIn.push(next.callback || checkSuccess);
 			this.conn.write(next.packet);
 		}
@@ -134,11 +134,7 @@ module.exports = (function MakerLinkModule() {
 	MLP.requestBufferFree = function() {
 		return this.queueCommand(
 			hostCommand(HOST_QUERY.GET_BUFFER_FREE),
-			function (payload) {
-				var out = unpack('BL', payload);
-				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
-				this.state.buffer = out[1];
-			}.bind(this)
+			hostReply('L', function(out) { this.state.buffer = out[0] })
 		);
 	}
 
@@ -166,30 +162,22 @@ module.exports = (function MakerLinkModule() {
 	MLP.requestBusyState = function() {
 		return this.queueCommand(
 			hostCommand(HOST_QUERY.CHECK_BUSY),
-			function (payload) {
-				if (this.checkError(payload[0],RESPONSE_CODE.SUCCESS)) return;
-				this.state.busy = payload[1] === 0;
-			}.bind(this)
+			hostReply('B', function(out) { this.state.busy = (out[0] === 0) })
 		);
 	}
 
 	MLP.requestBuildName = function() {
 		return this.queueCommand(
 			hostCommand(HOST_QUERY.GET_BUILD_NAME),
-			function (payload) {
-				var out = unpack('BS', payload);
-				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
-				this.state.build.name = out[1];
-			}.bind(this)
+			hostReply('S', function(out) { this.state.build.name = out[0] })
 		);
 	}
 
 	MLP.requestBoardState = function() {
 		return this.queueCommand(
 			hostCommand(HOST_QUERY.GET_BOARD_STATE),
-			function (payload) {
-				if (this.checkError(payload[0],RESPONSE_CODE.SUCCESS)) return;
-				var bits = payload[1], info = [];
+			hostReply('B', function(out) {
+				var bits = out[0], info = [];
 				if (bits & 1) info.push('PREHEAT');
 				if (bits & 2) info.push('MANUAL');
 				if (bits & 4) info.push('SCRIPT');
@@ -200,20 +188,19 @@ module.exports = (function MakerLinkModule() {
 				if (bits & 128) info.push('POWER ERROR');
 				this.state.board.info = info;
 				this.state.board.flags = bits;
-			}.bind(this)
+			})
 		);
 	};
 
 	MLP.requestBuildStatistics = function() {
 		return this.queueCommand(
 			hostCommand(HOST_QUERY.GET_BUILD_STATS),
-			function (payload) {
-				if (this.checkError(payload[0],RESPONSE_CODE.SUCCESS)) return;
-				this.state.build.flag = payload[1];
-				this.state.build.state = BUILD_STATE[payload[1]];
-				this.state.build.hours = payload[2];
-				this.state.build.minutes = payload[3];
-			}.bind(this)
+			hostReply('BBBB', function(out) {
+				this.state.build.flag = out[0];
+				this.state.build.state = BUILD_STATE[out[0]];
+				this.state.build.hours = out[1];
+				this.state.build.minutes = out[2];
+			})
 		);
 	};
 
@@ -222,21 +209,27 @@ module.exports = (function MakerLinkModule() {
 		if (filename.length > MAX_FILE_NAME) throw "filename too long";
 		return this.queueCommand(
 			hostCommand(HOST_QUERY.CAPTURE_TO_FILE, 'S', [filename]),
+			hostReply('B', function(out) { this.state.capture = { begin:out[0] } })
+			/*
 			function (payload) {
 				if (this.checkError(payload[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.capture = { begin:payload[1] };
 			}.bind(this)
+			*/
 		);
 	};
 
 	MLP.endCapture = function(filename) {
 		return this.queueCommand(
 			hostCommand(HOST_QUERY.END_CAPTURE),
+			hostReply('L', function(out) { this.state.capture.end = out[0] })
+			/*
 			function (payload) {
 				var out = unpack('BL', payload);
 				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.capture.end = out[1];
 			}.bind(this)
+			*/
 		);
 	};
 
@@ -245,11 +238,14 @@ module.exports = (function MakerLinkModule() {
 		if (filename.length > MAX_FILE_NAME) throw "filename too long";
 		return this.requestBusyState().queueCommand(
 			hostCommand(HOST_QUERY.PLAY_CAPTURE, 'S', [filename]),
+			hostReply('S', function(out) { this.state.playback = out[0] }),
+			/*
 			function (payload) {
 				if (this.checkError(payload[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.playback = payload[1];
 			}.bind(this),
-			isIdle.bind(this)
+			*/
+			isIdle
 		);
 	};
 
@@ -271,25 +267,39 @@ module.exports = (function MakerLinkModule() {
 		if (!more) this.requestBusyState();
 		return this.queueCommand(
 			hostCommand(HOST_QUERY.GET_NEXT_FILENAME, 'B', [more ? 0 : 1]),
+			// todo switch to hostReply()
 			processFileList.bind(this),
-			isIdle.bind(this)
+			isIdle
 		);
 	};
 
 	MLP.requestVersion = function(filename) {
 		return this.queueCommand(
 			hostCommand(HOST_QUERY.GET_VERSION, 'I', [100]),
+			hostReply('I', function(out) { this.state.version = out[0] })
+			/*
 			function (payload) {
 				var out = unpack('BI', payload);
 				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.version = { firmware: out[1] };
 			}.bind(this)
+			*/
 		);
 	};
 
 	MLP.requestVersionExt = function(filename) {
 		return this.queueCommand(
 			hostCommand(HOST_QUERY.GET_VERSION_EXT, 'I', [100]),
+			hostReply('IIBBI', function(out) {
+				this.state.version = {
+					firmware: out[0],
+					internal: out[1],
+					variant: out[2],
+					res1: out[3],
+					res2: out[4]
+				};
+			})
+			/*
 			function (payload) {
 				var out = unpack('BIIBBI', payload);
 				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
@@ -301,6 +311,7 @@ module.exports = (function MakerLinkModule() {
 					res2: out[5]
 				};
 			}.bind(this)
+			*/
 		);
 	};
 
@@ -513,6 +524,14 @@ module.exports = (function MakerLinkModule() {
 		_pack('BB',buf,0,[PROTOCOL_STARTBYTE,off-2],0);
 		_pack('B',buf,off,[crc],0);
 		return toBuffer(buf.slice(0,off+1));
+	}
+
+	function hostReply(def, call) {
+		return function(payload) {
+			var out = unpack('B' + def, payload);
+			if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
+			if (call) call.bind(this)(out.slice(1));
+		}
 	}
 
 	function toolQuery(tool, cmd) {
