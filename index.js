@@ -43,10 +43,16 @@ function print(host, port, file) {
 		});
 }
 
+function read(filename) {
+	var link = new MakerLink();
+	link.readFile(filename);
+}
+
 //probe('localhost', 5000);
 //probe('localhost', 5001);
 //probe('localhost', 5002); 
 //probe('localhost', 5003); 
-probe('localhost', 5004);
+//probe('localhost', 5004);
 
 //print('localhost', 5004, 'mik torus.x3g');
+read('../../python/cube.x3g');

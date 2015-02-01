@@ -4,6 +4,7 @@ module.exports = (function MakerLinkModule() {
 
 	var events = require('events'),
 		net	   = require('net'),
+		fs     = require('fs'),
 		maxQ   = 1,
 		ncWait = 10;
 
@@ -302,6 +303,21 @@ module.exports = (function MakerLinkModule() {
 			toolQuery(tool, TOOL_QUERY.GET_TOOLHEAD_TARGET_TEMP),
 			hostReply('i', function(out) { this.state.tool[tool].temp_target = out[0] })
 		);
+	};
+
+	MLP.readFile = function(filename) {
+		fs.readFile(filename, function(err, data) {
+			console.log({read:(typeof data), len:data.length});
+			var stream = new StreamReader();
+			for (var i=0; i<data.length; i++) {
+				stream.nextByte(data[i]);
+				if (stream.isDataReady()) {
+					var payload = stream.payload;
+					this.reader.reset();
+					console.log({data:payload});
+				}
+			}
+		});
 	};
 
 	/**
