@@ -11,7 +11,6 @@ module.exports = (function MakerLinkModule() {
 		this.conn = new NetConn();
 
 		this.conn.on('payload', function (payload) {
-			//console.log({payload:payload});
 			var q = this.queue,
 				fn = q.shift();
 			if (fn) fn(payload);
@@ -19,7 +18,6 @@ module.exports = (function MakerLinkModule() {
 		}.bind(this));
 
 		this.conn.on('error', function(error) {
-			// todo flush til next cmd object and call it w/ error
 			console.log({error:error});
 			this.errors.push(error);
 		}.bind(this));
@@ -53,12 +51,10 @@ module.exports = (function MakerLinkModule() {
 
 	var MLP = MakerLink.prototype;
 
-	// test pack/unpack
-	MLP.test = function() {
-		var p = pack('BiIlLS', 1, 2, 3, 4, 5, "Stewart");
-		var u = unpack('BiIlLS', p);
-		console.log({p:p, u:u});
-	};
+	// used for some command execution pre-checks
+	function isIdle() {
+		return this.state.busy;
+	}
 
 	MLP.resetComms = function() {
 		this.conn.drain();
@@ -104,8 +100,8 @@ module.exports = (function MakerLinkModule() {
 		return false;
 	};
 
-	MLP.queueCommand = function(packet, callback) {
-		this.queueOut.push({packet:packet, callback:callback});
+	MLP.queueCommand = function(packet, callback, prerun) {
+		this.queueOut.push({packet:packet, callback:callback, prerun:prerun});
 		this.checkQueueOut();
 		return this;
 	};
@@ -113,6 +109,7 @@ module.exports = (function MakerLinkModule() {
 	MLP.checkQueueOut = function() {
 		while (this.queueOut.length > 0 && this.queue.length < maxQ) {
 			var next = this.queueOut.shift();
+			if (next.prerun && !next.prerun()) continue;
 			this.queue.push(next.callback || checkSuccess);
 			this.conn.write(next.packet);
 		}
@@ -245,29 +242,34 @@ module.exports = (function MakerLinkModule() {
 	MLP.playbackFile = function(filename) {
 		if (!filename) throw "missing filename";
 		if (filename.length > MAX_FILE_NAME) throw "filename too long";
-		return this.queueCommand(
+		return this.requestBusyState().queueCommand(
 			query2(pack('BS', HOST_QUERY.PLAY_CAPTURE, filename)),
 			function (payload) {
 				if (this.checkError(payload[0],RESPONSE_CODE.SUCCESS)) return;
 				this.state.playback = payload[1];
-			}.bind(this)
+			}.bind(this),
+			isIdle.bind(this)
 		);
 	};
 
+	function processFileList(payload) {
+		var out = unpack('BBS', payload),
+			sd_rc = out[1], // what is SD response code for? always zero?
+			file = out[2];
+		if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
+		if (!more) this.state.sdcard = [];
+		if (file && file != '') {
+			this.requestFileList(true);
+			this.state.sdcard.push(file);
+		}
+	}
+
+	// will kill a running job
 	MLP.requestFileList = function(more) {
-		return this.queueCommand(
+		return this.requestBusyState().queueCommand(
 			hostCommand(HOST_QUERY.GET_NEXT_FILENAME, 'B', [more ? 0 : 1]),
-			function (payload) {
-				var out = unpack('BBS', payload),
-					sd_rc = out[1], // what is SD response code for? always zero?
-					file = out[2];
-				if (this.checkError(out[0],RESPONSE_CODE.SUCCESS)) return;
-				if (!more) this.state.sdcard = [];
-				if (file && file != '') {
-					this.requestFileList(true);
-					this.state.sdcard.push(file);
-				}
-			}.bind(this)
+			processFileList.bind(this),
+			isIdle.bind(this)
 		);
 	};
 

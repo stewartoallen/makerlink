@@ -10,27 +10,26 @@ function probe(host, port) {
 		.requestBufferFree()
 		.requestBuildName()
 		.requestBuildStatistics()
-		/*
-		*/
 
-//		.setToolheadTemperature(0,0)
+		/*
+		.setToolheadTemperature(0,0)
 		.requestToolheadTemperature(0)
 		.requestToolheadTargetTemperature(0)
-		/*
 		*/
 
-		/*
 		.captureToFile('capture.x3g')
+		.setToolheadTemperature(0,100)
 		.endCapture()
+		/*
 		*/
 
-		.requestFileList()
-		.requestBusyState()
+		/*
+		*/
+		.requestFileList() // kills a running print job
+//		.requestBusyState()
 		.requestBufferFree()
 		.requestBoardState()
 		.requestVersionExt()
-		/*
-		*/
 
 //		.jobAbort()
 		.onReady(function(ml) {
