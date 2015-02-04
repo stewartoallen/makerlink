@@ -4,7 +4,8 @@ function probe(host, port) {
 	var link = new MakerLink();
 	link.open(host, port);
 	link
-//		.bootInit()
+		.bootInit()
+//		.resetBot() // causes bot to be unresponsive for a few millis or ignore next command
 //		.clearBuffer() // causes bot to be unresponsive for a few millis or ignore next command
 
 		.requestBusyState()
@@ -16,11 +17,14 @@ function probe(host, port) {
 		.requestToolheadTemperature(0)
 		.requestToolheadTargetTemperature(0)
 
-		.captureToFile('capture2.x3g')
+		/*
+		.captureToFile('capture3.x3g')
 		.setToolheadTemperature(0,100)
+		.setToolheadTemperature(0,0)
 		.endCapture()
+		*/
 
-		.requestFileList() // kills a running print job
+//		.requestFileList() // kills a running print job
 		.requestBufferFree()
 		.requestBoardState()
 		.requestVersionExt()
@@ -28,6 +32,7 @@ function probe(host, port) {
 //		.jobAbort()
 		.onReady(function(ml) {
 			console.log(ml.state);
+//			link.resetBot()
 		});
 }
 
@@ -55,6 +60,7 @@ function print(host, port, file) {
 		.playbackFile(file)
 		.onReady(function(ml) {
 			console.log(ml.state);
+			link.jobAbort()
 		});
 }
 
@@ -67,11 +73,11 @@ function read(filename) {
 //probe('localhost', 5001);
 //probe('localhost', 5002); 
 //probe('localhost', 5003); 
-//probe('localhost', 5004);
+probe('localhost', 5004);
 
 //print('localhost', 5004, 'mik torus.x3g');
 //read('../../python/cube.x3g');
 //read(process.argv[2]);
 
-probe('192.168.10.92', 5004);
+//probe('192.168.10.92', 5004);
 //sendFile('192.168.10.92', 5004, process.argv[2], process.argv[3]);

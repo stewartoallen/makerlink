@@ -390,8 +390,8 @@ module.exports = (function MakerLinkModule() {
 				}
 			}
 		} catch (err) {
-			this.reader.reset();
 			this.emit('error', err);
+			this.reader.getPayload();
 		}
 	};
 
