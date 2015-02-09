@@ -327,6 +327,8 @@ module.exports = (function MakerLinkModule() {
 		this.client = null;
 		this.buffer = [];
 		this.drain = true;
+		this.pre = new Buffer([PROTOCOL_STARTBYTE,0]);
+		this.crc = new Buffer([0]);
 	}
 
 	NetConn.prototype = Object.create(events.EventEmitter.prototype);
@@ -396,10 +398,11 @@ module.exports = (function MakerLinkModule() {
 			this.buffer.push(data);
 		} else {
 			console.log({write:data,len:data.length,crc:crc(data)});
-			this.client.write(PROTOCOL_STARTBYTE);
-			this.client.write(data.length);
+			this.pre[1] = data.length;
+			this.crc[0] = crc(data);
+			this.client.write(this.pre);
 			this.client.write(data);
-			this.client.write(crc(data));
+			this.client.write(this.crc);
 		}
 	};
 
