@@ -5,8 +5,7 @@ module.exports = (function MakerLinkModule() {
 	var events = require('events'),
 		net	   = require('net'),
 		fs     = require('fs'),
-		maxQ   = 1,
-		ncWait = 10;
+		maxQ   = 1;
 
 	function MakerLink() {
 		this.conn = new NetConn();
@@ -337,7 +336,7 @@ module.exports = (function MakerLinkModule() {
 
 		this.reader = new StreamReader();
 		this.client = new net.Socket();
-		this.client.on('data', function(data) { this.process(data) }.bind(this));
+		this.client.on('data', function(data) { this.receive(data) }.bind(this));
 		this.client.on('close', function() { this.close() }.bind(this));
 		this.client.connect(port, host, function() {
 			if (this.buffer.length > 0) {
@@ -364,7 +363,7 @@ module.exports = (function MakerLinkModule() {
 		this.drain = true;
 	};
 
-	NetConn.prototype.process = function(data) {
+	NetConn.prototype.receive = function(data) {
 		if (this.drain) {
 			console.log({drain:data});
 			this.drain = false;
@@ -386,6 +385,12 @@ module.exports = (function MakerLinkModule() {
 		}
 	};
 
+	/**
+	 * write buffer to net prepending protocol header and length
+	 * and appending a crc
+	 *
+	 * @param {Buffer} data
+	 */
 	NetConn.prototype.write = function(data) {
 		if (!this.client) throw "not connected";
 
@@ -396,7 +401,10 @@ module.exports = (function MakerLinkModule() {
 			this.buffer.push(data);
 		} else {
 			console.log({write:data});
+			this.client.write(PROTOCOL_STARTBYTE);
+			this.client.write(data.length);
 			this.client.write(data);
+			this.client.write(crc(data));
 		}
 	};
 
@@ -439,7 +447,7 @@ module.exports = (function MakerLinkModule() {
 				}
 				break;
 			case PROTO.WAIT_FOR_CRC:
-				var crc = CRC(this.payload);
+				var crc = crc(this.payload);
 				if (crc !== value){
 					throw exception('Packet CRC Exception', 'value mismatch');
 				}
@@ -482,10 +490,10 @@ module.exports = (function MakerLinkModule() {
 			args.unshift(cmd);
 		}
 		var buf = new ArrayBuffer(256),
-			off = pack(def,buf,2,args,0),
-			crc = CRC(buf,2,off);
-		pack('BB',buf,0,[PROTOCOL_STARTBYTE,off-2],0);
-		pack('B',buf,off,[crc],0);
+			off = pack(def,buf,0,args,0);
+			//crc = crc(buf,0,off);
+		//pack('BB',buf,0,[PROTOCOL_STARTBYTE,off-2],0);
+		//pack('B',buf,off,[crc],0);
 		return toBuffer(buf.slice(0,off+1));
 	}
 
@@ -503,11 +511,11 @@ module.exports = (function MakerLinkModule() {
 
 	function toolCommand(tool, cmd, def, args) {
 		var buf = new ArrayBuffer(256),
-			off = pack(def,buf,6,args,0),
-			len = pack('BBBB',buf,2,[HOST_CMD.TOOL_ACTION, tool, cmd, off-6],0), 
-			crc = CRC(buf,2,off);
-		pack('BB',buf,0,[PROTOCOL_STARTBYTE,off-2],0);
-		pack('B',buf,off,[crc],0);
+			off = pack(def,buf,4,args,0),
+			len = pack('BBBB',buf,0,[HOST_CMD.TOOL_ACTION, tool, cmd, off-4],0);
+			//crc = crc(buf,2,off);
+		//pack('BB',buf,0,[PROTOCOL_STARTBYTE,off-2],0);
+		//pack('B',buf,off,[crc],0);
 		return toBuffer(buf.slice(0,off+1));
 	}
 
@@ -601,17 +609,23 @@ module.exports = (function MakerLinkModule() {
 		return {"name":name, "message":message, code:code};
 	}
 
-	function CRC(payload,off,len) {
+	/**
+	 * @param {Buffer} payload
+	 * @param {number} off
+	 * @param {number} len
+	 * @returns {number}
+	 */
+	function crc(payload,off,len) {
 		if (!payload) {
 			throw exception("Argument Exception", 'payload is null or undefined');
 		} else if (!(payload instanceof ArrayBuffer)) {
 			throw exception("Argument Exception", 'payload is not an ArrayBuffer');
 		}
 		var i = off || 0,
-			crc = 0,
-			max = len || payload.byteLength;
-		while (i < max) crc = CRC_TABLE[crc ^ payload[i++]];
-		return crc;
+			val = 0,
+			max = len || payload.byteLength || payload.length;
+		while (i < max) val = CRC_TABLE[val ^ payload[i++]];
+		return val;
 	}
 
 	/**
