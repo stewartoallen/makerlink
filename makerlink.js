@@ -339,8 +339,8 @@ module.exports = (function MakerLinkModule() {
 		this.client.on('data', function(data) { this.receive(data) }.bind(this));
 		this.client.on('close', function() { this.close() }.bind(this));
 		this.client.connect(port, host, function() {
-			this.emit("connect", this)
 			this.writeBuffered();
+			this.emit("connect", this)
 		}.bind(this));
 
 		return this;
@@ -395,7 +395,7 @@ module.exports = (function MakerLinkModule() {
 			console.log({write_buffer:data});
 			this.buffer.push(data);
 		} else {
-			console.log({write:data});
+			console.log({write:data,len:len,crc:crc(data)});
 			this.client.write(PROTOCOL_STARTBYTE);
 			this.client.write(data.length);
 			this.client.write(data);
@@ -406,7 +406,9 @@ module.exports = (function MakerLinkModule() {
 	NetConn.prototype.writeBuffered = function() {
 		var buf = this.buffer, len = buf.len, i = 0;
 		this.buffer = null;
+		console.log("write buffered "+len);
 		while (i < len) this.write(buf[i++]);
+		console.log("write buffered done");
 	};
 
 	/**
