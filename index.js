@@ -55,4 +55,4 @@ function read(filename) {
 //probe('localhost', 5004);
 
 //print('localhost', 5004, 'mik torus.x3g');
-read('../../python/cube.x3g');
+read('/Users/stewart/Things/Output/v108-35 cap.x3g');

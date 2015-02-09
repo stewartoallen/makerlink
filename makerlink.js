@@ -307,12 +307,13 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.readFile = function(filename) {
 		fs.readFile(filename, function(err, data) {
+			if (err) throw err;
 			console.log({read:(typeof data), len:data.length});
 			var stream = new FileReader();
 			for (var i=0; i<data.length; i++) {
 				stream.nextByte(data[i]);
 				if (stream.isDataReady()) {
-					var payload = stream.getPayload();
+					var payload = stream.getPacket();
 					console.log({data:payload});
 				}
 			}
@@ -478,61 +479,71 @@ module.exports = (function MakerLinkModule() {
 	 */
 
 	function FileReader() {
-		this.cmd_id = null;
+		this.cmd_id = 0;
 		this.cmd_def = null;
 		this.def_pos = 0;
 		this.writepos = 0;
 		this.expect = 0;
-		this.toNull = false;
+		this.to_null = false;
 		this.buffer = new ArrayBuffer(256);
 		this.view = new DataView(this.buffer);
+		this.last_value = 0;
 	}
 
 	FileReader.prototype.nextByte = function (value) {
-		if (this.cmd_id === null) {
+		this.view.setUint8(this.writepos++, value);
+		this.last_value = value;
+		if (this.cmd_id === 0) {
 			this.cmd_id = value;
 			this.cmd_def = HCMD_DEC[value];
+			if (!this.cmd_def) {
+				this.writepos--;
+				this.cmd_id = 0;
+				console.log('invalid cmd: '+value);
+				return;
+			}
+console.log({name:HCMD_DESC[value]});
+			this.def_pos = 0;
 			this.expect = 0;
+			this.to_null = false;
+			//return;
+		}
+		if (this.to_null) {
+//console.log({wait_null:value});
+			if (value !== 0) return;
+			this.to_null = false;
+		}
+		else if (this.expect && --this.expect > 0) {
+//console.log({expect:this.expect, value:value});
 			return;
 		}
-		if (this.toNull) {
-			if (value === 0) {
-				this.def_pos++;
-				this.toNull = false;
-			}
-			this.view.setUint8(this.writepos++, value);
-			return;
-		}
-		else if (this.expect) {
-			this.view.setUint8(this.writepos++, value);
-			this.expect--;
-			if (this.expect === 0) {
-				this.def_pos++;
-			}
-			return;
-		}
-		switch (this.cmd_def[this.def_pos]) {
+//console.log({next_def:this.def_pos,from:this.cmd_def});
+		switch (this.cmd_def[this.def_pos++]) {
 			case 'B': this.expect = 1; break;
 			case 'i': this.expect = 2; break;
 			case 'I': this.expect = 2; break;
 			case 'l': this.expect = 4; break;
 			case 'L': this.expect = 4; break;
 			case 'f': this.expect = 4; break;
-			case 'S': this.toNull = true; this.expect = 0; break;
+			case 'S': this.to_null = true; this.expect = 0; break;
+			case '[': this.expect = this.last_value; break;
 		}
 	};
 
 	FileReader.prototype.getPacket = function() {
 		var packet = this.buffer.slice(0,this.writepos);
-		this.cmd_id = null;
+		this.cmd_id = 0;
+		this.cmd_def = null;
 		this.writepos = 0;
+		this.expect = 0;
+		this.to_null = false;
 		this.buffer = new ArrayBuffer(256);
 		this.view = new DataView(this.buffer);
 		return packet;
 	};
 
 	FileReader.prototype.isDataReady = function() {
-		return this.cmd_id !== null && this.def_pos >= this.cmd_def.length;
+		return this.cmd_id !== 0 && this.def_pos > this.cmd_def.length;
 	};
 
 	/**
@@ -738,35 +749,38 @@ module.exports = (function MakerLinkModule() {
 			'GET_VERSION_EXT'          : 27
 		},
 		HCMD_DEF = [
-			'FIND_AXES_MIN',           131, 'BLI',      // axes, feedrate(ms), timeout(s)
-			'FIND_AXES_MAX',           132, 'BLI',      // axes, feedrate(ms), timeout(s)
-			'DELAY',                   133, 'L',        // delay(ms)
-			'CHANGE_TOOL',             134, 'B',        // tool_id
-			'WAIT_TOOL_READY',         135, 'BII',      // tool_id, delay(ms), timeout(s)
-			'TOOL_ACTION',             136, 'BBB',      // tool_id, action_id, payload_length, payload
-			'AXES_ENABLE_DISABLE',     137, 'B',        // axes
-			'MOVE_TO_EXTENDED_V1',     139, 'lllllL',   // x_steps, y_steps, z_steps, a_steps, b_steps, ms_feed_rate
-			'SET_POSITION_EXTENDED',   140, 'lllll',    // x_pos, y_pos, z_pos, a_pos, b_pos
-			'WAIT_PLATFORM_READY',     141, 'BII',      // tool_id, delay(ms), timeout(s)
-			'MOVE_TO_EXTENDED_V2',     142, 'lllllLB',  // x_steps, y_steps, z_steps, a_steps, b_steps, duration, bitfield
-			'STORE_HOME_POSITIONS',    143, 'B',        // axes
-			'LOAD_HOME_POSITIONS',     144, 'B',        // axes
-			'SET_POTENTIOMETER',       145, 'BB',       // axis, value
-			'SET_RGB_LED',             146, 'BBBBB',    // red, green, blue, blink_rate, reserved
-			'SET_BEEP',                147, 'IIB',      // frequency, duration(ms), reserved
-			'WAIT_FOR_BUTTON',         148, 'BIB',      // buttons, timeout(s), options
-			'DISPLAY_MESSAGE',         149, 'BBBBS',    // options, hpos, vpos, timeout(s), message
-			'SET_BUILD_PERCENT',       150, 'BB',       // percent, reserved
-			'PLAY_SONG',               151, 'B',        // song_id (0=err1, 1=done, 2=err2)
-			'RESET_FACTORY',           152, 'B',        // reserved
-			'BUILD_START',             153, 'LS',       // reserved, build_name
-			'BUILD_END',               154, 'B',        // reserved
-			'MOVE_TO_EXTENDED_V3',     156, 'lllllLBfI',// x_steps, y_steps, z_steps, a_steps, b_steps, dda_rate...
-			'STREAM_VERSION',          157, 'BBBLI'     // ver_high, ver_low, reserved, reserved, bot_type
+			['FIND_AXES_MIN',           131, 'BLI'],      // axes, feedrate(ms), timeout(s)
+			['FIND_AXES_MAX',           132, 'BLI'],      // axes, feedrate(ms), timeout(s)
+			['DELAY',                   133, 'L'],        // delay(ms)
+			['CHANGE_TOOL',             134, 'B'],        // tool_id
+			['WAIT_TOOL_READY',         135, 'BII'],      // tool_id, delay(ms), timeout(s)
+			['TOOL_ACTION',             136, 'BBB['],      // tool_id, action_id, payload_length, payload
+			['AXES_ENABLE_DISABLE',     137, 'B'],        // axes
+			['USER_BLOCK',              138, 'I'],        // unused (sailfish)
+			['MOVE_TO_EXTENDED_V1',     139, 'lllllL'],   // x_steps, y_steps, z_steps, a_steps, b_steps, ms_feed_rate
+			['SET_POSITION_EXTENDED',   140, 'lllll'],    // x_pos, y_pos, z_pos, a_pos, b_pos
+			['WAIT_PLATFORM_READY',     141, 'BII'],      // tool_id, delay(ms), timeout(s)
+			['MOVE_TO_EXTENDED_V2',     142, 'lllllLB'],  // x_steps, y_steps, z_steps, a_steps, b_steps, duration, bitfield
+			['STORE_HOME_POSITIONS',    143, 'B'],        // axes
+			['LOAD_HOME_POSITIONS',     144, 'B'],        // axes
+			['SET_POTENTIOMETER',       145, 'BB'],       // axis, value
+			['SET_RGB_LED',             146, 'BBBBB'],    // red, green, blue, blink_rate, reserved
+			['SET_BEEP',                147, 'IIB'],      // frequency, duration(ms), reserved
+			['WAIT_FOR_BUTTON',         148, 'BIB'],      // buttons, timeout(s), options
+			['DISPLAY_MESSAGE',         149, 'BBBBS'],    // options, hpos, vpos, timeout(s), message
+			['SET_BUILD_PERCENT',       150, 'BB'],       // percent, reserved
+			['PLAY_SONG',               151, 'B'],        // song_id (0=err1, 1=done, 2=err2)
+			['RESET_FACTORY',           152, 'B'],        // reserved
+			['BUILD_START',             153, 'LS'],       // reserved, build_name
+			['BUILD_END',               154, 'B'],        // reserved
+			['MOVE_TO_EXTENDED_V3',     155, 'lllllLBfI'],// x_steps, y_steps, z_steps, a_steps, b_steps, dda_rate...
+			['SEGMENT_ACCELERATION',    156, 'B'],        // value (o=off, 1=on)
+			['STREAM_VERSION',          157, 'BBBLI']     // ver_high, ver_low, reserved, reserved, bot_type
 		],
 		HCMD_ID = map(HCMD_DEF, 0, 1),
 		HCMD_ENC = map(HCMD_DEF, 0, 2),
 		HCMD_DEC = map(HCMD_DEF, 1, 2),
+		HCMD_DESC = map(HCMD_DEF, 1, 0),
 		TOOL_QUERY = {
 			'GET_TOOLHEAD_TEMP'        : 2,
 			'GET_PLATFORM_TEMP'        : 30,
