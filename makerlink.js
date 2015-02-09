@@ -8,7 +8,7 @@ module.exports = (function MakerLinkModule() {
 		maxQ   = 1,
 		ncWait = 10;
 
-	var MakerLink = function() {
+	function MakerLink() {
 		this.conn = new NetConn();
 
 		this.conn.on('payload', function (payload) {
@@ -48,7 +48,7 @@ module.exports = (function MakerLinkModule() {
 		this.queueOut = [];
 		this.errors = [];
 		this.onReadyQ = [];
-	};
+	}
 
 	var MLP = MakerLink.prototype;
 
@@ -120,7 +120,7 @@ module.exports = (function MakerLinkModule() {
 
 	MLP.bootInit = function() {
 		return this.queueCommand( hostCommand(HOST_QUERY.BOOT_INIT) );
-	}
+	};
 
 	/**
 	 * docs say this has no return, but it seems to
@@ -129,18 +129,18 @@ module.exports = (function MakerLinkModule() {
 	 */
 	MLP.clearBuffer = function() {
 		return this.queueCommand( hostCommand(HOST_QUERY.CLEAR_BUFFER) );
-	}
+	};
 
 	MLP.requestBufferFree = function() {
 		return this.queueCommand(
 			hostCommand(HOST_QUERY.GET_BUFFER_FREE),
 			hostReply('L', function(out) { this.state.buffer = out[0] })
 		);
-	}
+	};
 
 	MLP.resetBot = function() {
 		return this.queueCommand( hostCommand(HOST_QUERY.RESET) );
-	}
+	};
 
 	/**
 	 * also clears buffers, so like clearBuffer(), bot
@@ -148,15 +148,15 @@ module.exports = (function MakerLinkModule() {
 	 */
 	MLP.jobAbort = function() {
 		return this.queueCommand(hostCommand(HOST_QUERY.JOB_ABORT));
-	}
+	};
 
 	MLP.jobPauseResume = function() {
 		return this.queueCommand(hostCommand(HOST_QUERY.JOB_PAUSE_RESUME));
-	}
+	};
 
 	MLP.jobSetPercent = function(percent) {
 		return this.queueCommand(hostCommand(HOST_QUERY.JOB_PAUSE_RESUME, 'B', [percent]));
-	}
+	};
 
 	/** check if bot is busy with commands in queue */
 	MLP.requestBusyState = function() {
@@ -164,14 +164,14 @@ module.exports = (function MakerLinkModule() {
 			hostCommand(HOST_QUERY.CHECK_BUSY),
 			hostReply('B', function(out) { this.state.busy = (out[0] === 0) })
 		);
-	}
+	};
 
 	MLP.requestBuildName = function() {
 		return this.queueCommand(
 			hostCommand(HOST_QUERY.GET_BUILD_NAME),
 			hostReply('S', function(out) { this.state.build.name = out[0] })
 		);
-	}
+	};
 
 	MLP.requestBoardState = function() {
 		return this.queueCommand(
