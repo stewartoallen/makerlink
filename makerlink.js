@@ -404,7 +404,7 @@ module.exports = (function MakerLinkModule() {
 	};
 
 	NetConn.prototype.writeBuffered = function() {
-		var buf = this.buffer, len = buf.len, i = 0;
+		var buf = this.buffer, len = buf.length, i = 0;
 		this.buffer = null;
 		console.log("write buffered "+len);
 		while (i < len) this.write(buf[i++]);
