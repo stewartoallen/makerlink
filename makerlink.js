@@ -20,6 +20,7 @@ module.exports = (function MakerLinkModule() {
 		this.conn.on('error', function(error) {
 			console.log({error:error});
 			this.errors.push(error);
+			throw error;
 		}.bind(this));
 
 		this.state = {
@@ -397,7 +398,7 @@ module.exports = (function MakerLinkModule() {
 			console.log({write_buffer:data});
 			this.buffer.push(data);
 		} else {
-			console.log({write:data,len:data.length,crc:crc(data)});
+			console.log({write:data,len:data.length});
 			this.pre[1] = data.length;
 			this.crc[0] = crc(data);
 			this.client.write(this.pre);
@@ -409,9 +410,7 @@ module.exports = (function MakerLinkModule() {
 	NetConn.prototype.writeBuffered = function() {
 		var buf = this.buffer, len = buf.length, i = 0;
 		this.buffer = null;
-		console.log("write buffered "+len);
 		while (i < len) this.write(buf[i++]);
-		console.log("write buffered done");
 	};
 
 	/**
