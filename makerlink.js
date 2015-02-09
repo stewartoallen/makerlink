@@ -395,7 +395,7 @@ module.exports = (function MakerLinkModule() {
 			console.log({write_buffer:data});
 			this.buffer.push(data);
 		} else {
-			console.log({write:data,len:len,crc:crc(data)});
+			console.log({write:data,len:data.length,crc:crc(data)});
 			this.client.write(PROTOCOL_STARTBYTE);
 			this.client.write(data.length);
 			this.client.write(data);
@@ -619,11 +619,7 @@ module.exports = (function MakerLinkModule() {
 	 * @returns {number}
 	 */
 	function crc(payload,off,len) {
-		if (!payload) {
-			throw exception("Argument Exception", 'payload is null or undefined');
-		} else if (!(payload instanceof ArrayBuffer)) {
-			throw exception("Argument Exception", 'payload is not an ArrayBuffer');
-		}
+		if (!payload) throw exception("Argument Exception", 'payload is null or undefined');
 		var i = off || 0,
 			val = 0,
 			max = len || payload.byteLength || payload.length;
