@@ -400,7 +400,7 @@ module.exports = (function MakerLinkModule() {
 		} else {
 			console.log({write:data,len:data.length});
 			this.pre[1] = data.length;
-			this.crc[0] = crc(data);
+			this.crc[0] = calculateCRC(data);
 			this.client.write(this.pre);
 			this.client.write(data);
 			this.client.write(this.crc);
@@ -452,7 +452,7 @@ module.exports = (function MakerLinkModule() {
 				}
 				break;
 			case PROTO.WAIT_FOR_CRC:
-				var crc = crc(this.payload);
+				var crc = calculateCRC(this.payload);
 				if (crc !== value){
 					throw exception('Packet CRC Exception', 'value mismatch');
 				}
@@ -620,7 +620,7 @@ module.exports = (function MakerLinkModule() {
 	 * @param {number} len
 	 * @returns {number}
 	 */
-	function crc(payload,off,len) {
+	function calculateCRC(payload,off,len) {
 		if (!payload) throw exception("Argument Exception", 'payload is null or undefined');
 		var i = off || 0,
 			val = 0,
