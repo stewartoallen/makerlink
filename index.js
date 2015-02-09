@@ -31,6 +31,21 @@ function probe(host, port) {
 		});
 }
 
+function sendFile(host, port, src, dst) {
+	var link = new MakerLink();
+	link.open(host, port);
+	link
+		.requestBusyState()
+		.requestBufferFree()
+		.captureToFile(dst)
+		.sendFile(src)
+		.onReady(function(ml) {
+			console.log(ml.state);
+			link.endCapture().onReady(function(mk) {
+				console.log(mk.state);
+			});
+		});
+}
 function print(host, port, file) {
 	var link = new MakerLink();
 	link
@@ -56,5 +71,7 @@ function read(filename) {
 
 //print('localhost', 5004, 'mik torus.x3g');
 //read('../../python/cube.x3g');
+//read(process.argv[2]);
 
-read(process.argv[2]);
+probe('192.168.10.92', 5004);
+//sendFile('192.168.10.92', 5004, process.argv[2], process.argv[3]);

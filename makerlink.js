@@ -316,6 +316,7 @@ module.exports = (function MakerLinkModule() {
 				}
 			}
 		}.bind(this));
+		return this;
 	};
 
 	MLP.readFile = function(filename) {
@@ -350,7 +351,7 @@ module.exports = (function MakerLinkModule() {
 	NetConn.prototype.open = function(host,port) {
 		if (this.client) throw "already connected";
 
-		this.reader = new FileReader();
+		this.reader = new StreamReader();
 		this.client = new net.Socket();
 		this.client.on('data', function(data) { this.receive(data) }.bind(this));
 		this.client.on('close', function() { this.close() }.bind(this));
