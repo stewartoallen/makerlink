@@ -308,12 +308,11 @@ module.exports = (function MakerLinkModule() {
 	MLP.readFile = function(filename) {
 		fs.readFile(filename, function(err, data) {
 			console.log({read:(typeof data), len:data.length});
-			var stream = new StreamReader();
+			var stream = new FileReader();
 			for (var i=0; i<data.length; i++) {
 				stream.nextByte(data[i]);
 				if (stream.isDataReady()) {
-					var payload = stream.payload;
-					this.reader.reset();
+					var payload = stream.getPayload();
 					console.log({data:payload});
 				}
 			}
@@ -337,7 +336,7 @@ module.exports = (function MakerLinkModule() {
 	NetConn.prototype.open = function(host,port) {
 		if (this.client) throw "already connected";
 
-		this.reader = new StreamReader();
+		this.reader = new FileReader();
 		this.client = new net.Socket();
 		this.client.on('data', function(data) { this.receive(data) }.bind(this));
 		this.client.on('close', function() { this.close() }.bind(this));
@@ -372,9 +371,7 @@ module.exports = (function MakerLinkModule() {
 			for (var i = 0; i < data.length; i++) {
 				this.reader.nextByte(data[i]);
 				if (this.reader.isDataReady()) {
-					var payload = this.reader.payload;
-					this.reader.reset();
-					this.emit('payload', payload);
+					this.emit('payload', this.reader.getPayload());
 				}
 			}
 		} catch (err) {
@@ -400,7 +397,7 @@ module.exports = (function MakerLinkModule() {
 		} else {
 			console.log({write:data,len:data.length});
 			this.pre[1] = data.length;
-			this.crc[0] = calculateCRC(data);
+			this.crc[0] = crcCalc(data);
 			this.client.write(this.pre);
 			this.client.write(data);
 			this.client.write(this.crc);
@@ -452,7 +449,7 @@ module.exports = (function MakerLinkModule() {
 				}
 				break;
 			case PROTO.WAIT_FOR_CRC:
-				var crc = calculateCRC(this.payload);
+				var crc = crcCalc(this.payload);
 				if (crc !== value){
 					throw exception('Packet CRC Exception', 'value mismatch');
 				}
@@ -463,15 +460,79 @@ module.exports = (function MakerLinkModule() {
 		}
 	};
 
-	StreamReader.prototype.reset = function() {
+	StreamReader.prototype.getPayload = function() {
+		var payload = this.payload;
 		this.state = PROTO.WAIT_FOR_HEADER;
 		this.payload = undefined;
 		this.payloadOffset = 0;
 		this.expectedLength = 0;
+		return payload;
 	};
 
 	StreamReader.prototype.isDataReady = function() {
 		return this.state === PROTO.PAYLOAD_READY;
+	};
+
+	/**
+	 * Read S3G stream and emit packets
+	 */
+
+	function FileReader() {
+		this.cmd_id = null;
+		this.cmd_def = null;
+		this.def_pos = 0;
+		this.writepos = 0;
+		this.expect = 0;
+		this.toNull = false;
+		this.buffer = new ArrayBuffer(256);
+		this.view = new DataView(this.buffer);
+	}
+
+	FileReader.prototype.nextByte = function (value) {
+		if (this.cmd_id === null) {
+			this.cmd_id = value;
+			this.cmd_def = HCMD_DEC[value];
+			this.expect = 0;
+			return;
+		}
+		if (this.toNull) {
+			if (value === 0) {
+				this.def_pos++;
+				this.toNull = false;
+			}
+			this.view.setUint8(this.writepos++, value);
+			return;
+		}
+		else if (this.expect) {
+			this.view.setUint8(this.writepos++, value);
+			this.expect--;
+			if (this.expect === 0) {
+				this.def_pos++;
+			}
+			return;
+		}
+		switch (this.cmd_def[this.def_pos]) {
+			case 'B': this.expect = 1; break;
+			case 'i': this.expect = 2; break;
+			case 'I': this.expect = 2; break;
+			case 'l': this.expect = 4; break;
+			case 'L': this.expect = 4; break;
+			case 'f': this.expect = 4; break;
+			case 'S': this.toNull = true; this.expect = 0; break;
+		}
+	};
+
+	FileReader.prototype.getPacket = function() {
+		var packet = this.buffer.slice(0,this.writepos);
+		this.cmd_id = null;
+		this.writepos = 0;
+		this.buffer = new ArrayBuffer(256);
+		this.view = new DataView(this.buffer);
+		return packet;
+	};
+
+	FileReader.prototype.isDataReady = function() {
+		return this.cmd_id !== null && this.def_pos >= this.cmd_def.length;
 	};
 
 	/**
@@ -496,9 +557,6 @@ module.exports = (function MakerLinkModule() {
 		}
 		var buf = new ArrayBuffer(256),
 			off = pack(def,buf,0,args,0);
-			//crc = crc(buf,0,off);
-		//pack('BB',buf,0,[PROTOCOL_STARTBYTE,off-2],0);
-		//pack('B',buf,off,[crc],0);
 		return toBuffer(buf.slice(0,off+1));
 	}
 
@@ -516,14 +574,19 @@ module.exports = (function MakerLinkModule() {
 
 	function toolCommand(tool, cmd, def, args) {
 		var buf = new ArrayBuffer(256),
-			off = pack(def,buf,4,args,0),
-			len = pack('BBBB',buf,0,[HOST_CMD.TOOL_ACTION, tool, cmd, off-4],0);
-			//crc = crc(buf,2,off);
-		//pack('BB',buf,0,[PROTOCOL_STARTBYTE,off-2],0);
-		//pack('B',buf,off,[crc],0);
+			off = pack(def,buf,4,args,0);
+		pack('BBBB',buf,0,[HCMD_ID.TOOL_ACTION, tool, cmd, off-4],0);
 		return toBuffer(buf.slice(0,off+1));
 	}
 
+	/**
+	 * @param {String} def
+	 * @param {ArrayBuffer} buf
+	 * @param {number} off
+	 * @param {Array} args
+	 * @param {number} argi
+	 * @returns {*}
+	 */
 	function pack(def,buf,off,args,argi) {
 		var j = 0,
 			len = args.length,
@@ -550,6 +613,10 @@ module.exports = (function MakerLinkModule() {
 					view.setUint32(off, param, true);
 					off += 4;
 					break;
+				case 'f':
+					view.setFloat32(off, param, true);
+					off += 4;
+					break;
 				case 'S':
 					for (var x=0; x<param.length; x++) {
 						view.setUint8(off++, param.charCodeAt(x));
@@ -563,6 +630,11 @@ module.exports = (function MakerLinkModule() {
 		return off;
 	}
 
+	/**
+	 * @param {String} def
+	 * @param {ArrayBuffer} buf
+	 * @returns {Array}
+	 */
 	function unpack(def,buf) {
 		var j = 0,
 			off = 0,
@@ -588,6 +660,10 @@ module.exports = (function MakerLinkModule() {
 					break;
 				case 'L':
 					out.push(view.getUint32(off, true));
+					off += 4;
+					break;
+				case 'f':
+					out.push(view.getFloat32(off, true));
 					off += 4;
 					break;
 				case 'S':
@@ -620,13 +696,19 @@ module.exports = (function MakerLinkModule() {
 	 * @param {number} len
 	 * @returns {number}
 	 */
-	function calculateCRC(payload,off,len) {
+	function crcCalc(payload,off,len) {
 		if (!payload) throw exception("Argument Exception", 'payload is null or undefined');
 		var i = off || 0,
 			val = 0,
 			max = len || payload.byteLength || payload.length;
 		while (i < max) val = CRC_TABLE[val ^ payload[i++]];
 		return val;
+	}
+
+	function map(arr, k, v) {
+		var out = {}, len = arr.length, i = 0;
+		while (i < len) out[arr[i][k]] = arr[i++][v];
+		return out;
 	}
 
 	/**
@@ -655,15 +737,36 @@ module.exports = (function MakerLinkModule() {
 			'GET_BUILD_STATS'          : 24,
 			'GET_VERSION_EXT'          : 27
 		},
-		HOST_CMD = {
-			'FIND_AXES_MIN'            : 131,
-			'FIND_AXES_MAX'            : 132,
-			'DELAY'                    : 133,
-			'CHANGE_TOOL'              : 134,
-			'WAIT_TOOL_READY'          : 135,
-			'TOOL_ACTION'              : 136,
-			'SET_BUILD_PERCENT'        : 150
-		},
+		HCMD_DEF = [
+			'FIND_AXES_MIN',           131, 'BLI',      // axes, feedrate(ms), timeout(s)
+			'FIND_AXES_MAX',           132, 'BLI',      // axes, feedrate(ms), timeout(s)
+			'DELAY',                   133, 'L',        // delay(ms)
+			'CHANGE_TOOL',             134, 'B',        // tool_id
+			'WAIT_TOOL_READY',         135, 'BII',      // tool_id, delay(ms), timeout(s)
+			'TOOL_ACTION',             136, 'BBB',      // tool_id, action_id, payload_length, payload
+			'AXES_ENABLE_DISABLE',     137, 'B',        // axes
+			'MOVE_TO_EXTENDED_V1',     139, 'lllllL',   // x_steps, y_steps, z_steps, a_steps, b_steps, ms_feed_rate
+			'SET_POSITION_EXTENDED',   140, 'lllll',    // x_pos, y_pos, z_pos, a_pos, b_pos
+			'WAIT_PLATFORM_READY',     141, 'BII',      // tool_id, delay(ms), timeout(s)
+			'MOVE_TO_EXTENDED_V2',     142, 'lllllLB',  // x_steps, y_steps, z_steps, a_steps, b_steps, duration, bitfield
+			'STORE_HOME_POSITIONS',    143, 'B',        // axes
+			'LOAD_HOME_POSITIONS',     144, 'B',        // axes
+			'SET_POTENTIOMETER',       145, 'BB',       // axis, value
+			'SET_RGB_LED',             146, 'BBBBB',    // red, green, blue, blink_rate, reserved
+			'SET_BEEP',                147, 'IIB',      // frequency, duration(ms), reserved
+			'WAIT_FOR_BUTTON',         148, 'BIB',      // buttons, timeout(s), options
+			'DISPLAY_MESSAGE',         149, 'BBBBS',    // options, hpos, vpos, timeout(s), message
+			'SET_BUILD_PERCENT',       150, 'BB',       // percent, reserved
+			'PLAY_SONG',               151, 'B',        // song_id (0=err1, 1=done, 2=err2)
+			'RESET_FACTORY',           152, 'B',        // reserved
+			'BUILD_START',             153, 'LS',       // reserved, build_name
+			'BUILD_END',               154, 'B',        // reserved
+			'MOVE_TO_EXTENDED_V3',     156, 'lllllLBfI',// x_steps, y_steps, z_steps, a_steps, b_steps, dda_rate...
+			'STREAM_VERSION',          157, 'BBBLI'     // ver_high, ver_low, reserved, reserved, bot_type
+		],
+		HCMD_ID = map(HCMD_DEF, 0, 1),
+		HCMD_ENC = map(HCMD_DEF, 0, 2),
+		HCMD_DEC = map(HCMD_DEF, 1, 2),
 		TOOL_QUERY = {
 			'GET_TOOLHEAD_TEMP'        : 2,
 			'GET_PLATFORM_TEMP'        : 30,
