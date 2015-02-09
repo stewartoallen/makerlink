@@ -305,6 +305,19 @@ module.exports = (function MakerLinkModule() {
 		);
 	};
 
+	MLP.sendFile = function(filename) {
+		var reader = fs.readFile(filename, function(err, data) {
+			var stream = new FileReader();
+			for (var i=0; i<data.length; i++) {
+				stream.nextByte(data[i]);
+				if (stream.isDataReady()) {
+					var payload = stream.getPacket();
+					this.queueCommand(toBuffer(payload));
+				}
+			}
+		}.bind(this));
+	};
+
 	MLP.readFile = function(filename) {
 		fs.readFile(filename, function(err, data) {
 			if (err) throw err;
