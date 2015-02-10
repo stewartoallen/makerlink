@@ -213,7 +213,7 @@ module.exports = (function MakerLinkModule() {
 		);
 	};
 
-	MLP.endCapture = function(filename) {
+	MLP.endCapture = function() {
 		return this.queueCommand(
 			hostCommand(HOST_QUERY.END_CAPTURE),
 			hostReply('L', function(out) { this.state.capture.end = out[0] })
@@ -390,8 +390,8 @@ module.exports = (function MakerLinkModule() {
 				}
 			}
 		} catch (err) {
-			this.reader.reset();
 			this.emit('error', err);
+			this.reader.getPayload();
 		}
 	};
 
@@ -599,7 +599,9 @@ console.log({name:HCMD_DESC[value]});
 
 	function toolCommand(tool, cmd, def, args) {
 		var buf = new ArrayBuffer(256),
-			off = pack(def,buf,4,args,0);
+			off = pack(def,buf,4,args,0),
+			def2 = HCMD_ENC[cmd];
+console.log({def:def, def2:def2});
 		pack('BBBB',buf,0,[HCMD_ID.TOOL_ACTION, tool, cmd, off-4],0);
 		return toBuffer(buf.slice(0,off+1));
 	}

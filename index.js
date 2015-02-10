@@ -4,34 +4,38 @@ function probe(host, port) {
 	var link = new MakerLink();
 	link.open(host, port);
 	link
-//		.bootInit()
-//		.clearBuffer() // causes bot to be unresponsive for a few millis or ignore next command
+		//.endCapture()
+		//.bootInit()
+		//.jobAbort()
+		//.resetBot() // causes bot to be unresponsive for a few millis or ignore next command
+		//.clearBuffer() // causes bot to be unresponsive for a few millis or ignore next command
 
 		.requestBusyState()
 		.requestBufferFree()
 		.requestBuildName()
 		.requestBuildStatistics()
 
-		.setToolheadTemperature(0,0)
+		//.setToolheadTemperature(0,0)
 		.requestToolheadTemperature(0)
 		.requestToolheadTargetTemperature(0)
 
-		.captureToFile('capture2.x3g')
-		.setToolheadTemperature(0,100)
-		.endCapture()
+		//.captureToFile('capture3.x3g')
+		//.setToolheadTemperature(0,100)
+		//.setToolheadTemperature(0,0)
+		//.endCapture()
 
 		.requestFileList() // kills a running print job
 		.requestBufferFree()
 		.requestBoardState()
 		.requestVersionExt()
 
-//		.jobAbort()
 		.onReady(function(ml) {
 			console.log(ml.state);
+//			link.resetBot()
 		});
 }
 
-function sendFile(host, port, src, dst) {
+function storeToSD(host, port, src, dst) {
 	var link = new MakerLink();
 	link.open(host, port);
 	link
@@ -46,7 +50,8 @@ function sendFile(host, port, src, dst) {
 			});
 		});
 }
-function print(host, port, file) {
+
+function playFromSD(host, port, file) {
 	var link = new MakerLink();
 	link
 		.open(host, port)
@@ -55,6 +60,7 @@ function print(host, port, file) {
 		.playbackFile(file)
 		.onReady(function(ml) {
 			console.log(ml.state);
+			link.jobAbort()
 		});
 }
 
@@ -74,4 +80,4 @@ function read(filename) {
 //read(process.argv[2]);
 
 probe('192.168.10.92', 5004);
-//sendFile('192.168.10.92', 5004, process.argv[2], process.argv[3]);
+//storeToSD('192.168.10.92', 5004, process.argv[2], process.argv[3]);
