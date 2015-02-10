@@ -768,7 +768,7 @@ console.log({name:HCMD_DESC[value]});
 			['DELAY',                   133, 'L'],        // delay(ms)
 			['CHANGE_TOOL',             134, 'B'],        // tool_id
 			['WAIT_TOOL_READY',         135, 'BII'],      // tool_id, delay(ms), timeout(s)
-			['TOOL_ACTION',             136, 'BBB['],      // tool_id, action_id, payload_length, payload
+			['TOOL_ACTION',             136, 'BBB['],     // tool_id, action_id, payload_length, payload
 			['AXES_ENABLE_DISABLE',     137, 'B'],        // axes
 			['USER_BLOCK',              138, 'I'],        // unused (sailfish)
 			['MOVE_TO_EXTENDED_V1',     139, 'lllllL'],   // x_steps, y_steps, z_steps, a_steps, b_steps, ms_feed_rate
