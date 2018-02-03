@@ -15,7 +15,7 @@ function probe(host, port) {
 		.requestBuildName()
 		.requestBuildStatistics()
 
-		//.setToolheadTemperature(0,0)
+		.setToolheadTemperature(0,100)
 		.requestToolheadTemperature(0)
 		.requestToolheadTargetTemperature(0)
 
@@ -24,7 +24,7 @@ function probe(host, port) {
 		//.setToolheadTemperature(0,0)
 		//.endCapture()
 
-		.requestFileList() // kills a running print job
+		//.requestFileList() // kills a running print job
 		.requestBufferFree()
 		.requestBoardState()
 		.requestVersionExt()
